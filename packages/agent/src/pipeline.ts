@@ -17,6 +17,7 @@ import { generateLandingContent } from './modules/ai/landingContentGenerator.js'
 import { createTourClient } from './modules/tours/index.js';
 import { sanitizeGeoFilter } from './modules/tours/youtravelClient.js';
 import { rankTours } from './modules/tours/tourRanker.js';
+import { applyTourFilters } from './modules/tours/tourFilters.js';
 import { generateLanding } from './modules/landing/landingGenerator.js';
 import {
   saveResult,
@@ -32,6 +33,15 @@ import type {
 } from './types/result.js';
 import type { NewsItem } from './types/news.js';
 import type { TravelInsight } from './types/insight.js';
+import {
+  buildEffectivePrompts,
+  currentMonthBucket,
+  loadPrompts,
+  loadSettings,
+  type AgentSettings,
+} from './config/agentConfig.js';
+import { DEFAULT_PROMPTS } from './modules/ai/prompts.js';
+import { filterBlocked, boostInsights } from './modules/ai/insightRanker.js';
 
 const AGENT_VERSION = '0.1.0';
 const SOURCES_PATH = path.join(AGENT_ROOT, 'src', 'config', 'sources.json');
@@ -41,6 +51,8 @@ export interface PipelineOptions {
   llmClient?: LlmClient;
   env?: Env;
   runId?: string;
+  hint?: string;
+  settings?: AgentSettings;
 }
 
 export async function loadSources(): Promise<SourcesFile> {
@@ -68,13 +80,11 @@ function pickNewsForInsight(news: NewsItem[], insightUrl: string): NewsItem {
   return news[0]!;
 }
 
-const CONFIDENCE_THRESHOLD = 0.4;
-const MIN_TOURS = 3;
-
 const REJECTION_LABELS: Record<RejectionReason, string> = {
   no_news: 'Не удалось получить новости из выбранных источников',
   low_confidence: 'Инфоповод слабо связан с travel (низкая уверенность LLM)',
   unknown_country: 'LLM не смог определить страну / направление',
+  blocked_country: 'Страна в чёрном списке настроек',
   no_tours: 'Подобрано слишком мало релевантных туров',
   llm_error: 'Ошибка анализа новостей LLM',
 };
@@ -84,11 +94,20 @@ function buildRejection(input: {
   details: string;
   sourceId?: string;
   runId?: string;
+  hint?: string | undefined;
+  settings?: AgentSettings;
   news?: NewsItem[];
   insights?: TravelInsight[];
   topInsight?: TravelInsight;
 }): RejectedPipelineResult {
   const message = `${REJECTION_LABELS[input.reason]}. ${input.details}`.trim();
+  const meta: RejectedPipelineResult['meta'] = {
+    createdAt: new Date().toISOString(),
+    agentVersion: AGENT_VERSION,
+    ...(input.runId ? { runId: input.runId } : {}),
+    ...(input.hint ? { hint: input.hint } : {}),
+    ...(input.settings ? { settingsSnapshot: snapshotSettings(input.settings) } : {}),
+  };
   const rejected: RejectedPipelineResult = {
     status: 'rejected',
     reason: input.reason,
@@ -99,15 +118,23 @@ function buildRejection(input: {
       sourceName: n.sourceName,
     })),
     insights: input.insights ?? [],
-    meta: {
-      createdAt: new Date().toISOString(),
-      agentVersion: AGENT_VERSION,
-      ...(input.runId ? { runId: input.runId } : {}),
-    },
+    meta,
     ...(input.sourceId ? { sourceId: input.sourceId } : {}),
     ...(input.topInsight ? { topInsight: input.topInsight } : {}),
   };
   return rejected;
+}
+
+function snapshotSettings(s: AgentSettings): NonNullable<
+  PipelineResult['meta']['settingsSnapshot']
+> {
+  return {
+    brandName: s.brand.name,
+    brandVoice: s.brand.voice,
+    defaultAudience: s.brand.defaultAudience,
+    confidenceThreshold: s.pipeline.confidenceThreshold,
+    ...(s.llm.model ? { model: s.llm.model } : {}),
+  };
 }
 
 async function persistRejection(result: RejectedPipelineResult): Promise<RejectedPipelineResult> {
@@ -124,63 +151,116 @@ export async function runPipeline(
   options: PipelineOptions = {},
 ): Promise<PipelineRunResult> {
   const env = options.env ?? getEnv();
+  const settings = options.settings ?? (await loadSettings());
+  const prompts = await loadPrompts(DEFAULT_PROMPTS);
+
+  const hint = options.hint?.trim() || undefined;
+  const effective = buildEffectivePrompts(prompts, { settings, hint });
+
   const llm =
     options.llmClient ??
     new AnthropicClient({
       apiKey: requireAnthropicKey(env),
-      model: env.ANTHROPIC_MODEL,
+      model: settings.llm.model ?? env.ANTHROPIC_MODEL,
     });
 
   const runId = options.runId;
   const sourceId = options.sourceId;
+  const baseRej = () => ({
+    ...(sourceId ? { sourceId } : {}),
+    ...(runId ? { runId } : {}),
+    ...(hint ? { hint } : {}),
+    settings,
+  });
 
-  logger.info({ sourceId: sourceId ?? 'all' }, 'Pipeline started');
+  logger.info(
+    {
+      sourceId: sourceId ?? 'all',
+      hint: hint ?? null,
+      voice: settings.brand.voice,
+      bucket: currentMonthBucket(),
+      blockedCountries: settings.geo.blocked,
+    },
+    'Pipeline started',
+  );
 
   const allSources = await loadSources();
   const sources = pickSources(allSources, sourceId);
   logger.info({ count: sources.length }, 'Sources selected');
 
-  const news = await fetchAllNews(sources, { maxAgeDays: 21, maxPerSource: 5 });
+  const news = await fetchAllNews(sources, {
+    maxAgeDays: settings.pipeline.newsMaxAgeDays,
+    maxPerSource: settings.pipeline.newsMaxPerSource,
+  });
   if (news.length === 0) {
     return persistRejection(
       buildRejection({
         reason: 'no_news',
-        details: `Источники (${sources.map((s) => s.id).join(', ')}) не вернули ни одной новости за последние 21 день.`,
-        ...(sourceId ? { sourceId } : {}),
-        ...(runId ? { runId } : {}),
+        details: `Источники (${sources.map((s) => s.id).join(', ')}) не вернули ни одной новости за последние ${settings.pipeline.newsMaxAgeDays} дней.`,
+        ...baseRej(),
       }),
     );
   }
   logger.info({ count: news.length }, 'News fetched');
 
-  let insights: TravelInsight[];
+  let rawInsights: TravelInsight[];
   try {
-    insights = await analyzeNews(llm, news);
+    rawInsights = await analyzeNews(llm, news, {
+      systemPrompt: effective.newsAnalyzer,
+      temperature: settings.llm.temperature.analyzer,
+      maxTokens: settings.llm.maxTokens,
+    });
   } catch (err) {
     return persistRejection(
       buildRejection({
         reason: 'llm_error',
         details: (err as Error).message,
-        ...(sourceId ? { sourceId } : {}),
-        ...(runId ? { runId } : {}),
+        ...baseRej(),
         news,
       }),
     );
   }
 
+  const { kept: notBlocked, dropped: blocked } = filterBlocked(
+    rawInsights,
+    settings.geo.blocked,
+  );
+  if (blocked.length > 0) {
+    logger.info(
+      { dropped: blocked.map((i) => i.country) },
+      'Insights dropped by geo.blocked',
+    );
+  }
+  if (notBlocked.length === 0) {
+    return persistRejection(
+      buildRejection({
+        reason: 'blocked_country',
+        details: `Все ${rawInsights.length} insight(ов) указывают на страны из чёрного списка (${settings.geo.blocked.join(', ')}).`,
+        ...baseRej(),
+        news,
+        insights: rawInsights,
+      }),
+    );
+  }
+
+  const insights = boostInsights(notBlocked, {
+    geo: settings.geo,
+    seasonal: settings.seasonalPriorities,
+    bucket: currentMonthBucket(),
+  });
+
   const topInsight = pickTopInsight(insights);
   logger.info(
     { country: topInsight.country, confidence: topInsight.confidenceScore },
-    'Top insight selected',
+    'Top insight selected (after geo/season boost)',
   );
 
-  if (topInsight.confidenceScore < CONFIDENCE_THRESHOLD) {
+  if (topInsight.confidenceScore < settings.pipeline.confidenceThreshold) {
     return persistRejection(
       buildRejection({
         reason: 'low_confidence',
-        details: `confidenceScore=${topInsight.confidenceScore} (<${CONFIDENCE_THRESHOLD}). Попробуйте другой источник или запустите без фильтра --source.`,
-        ...(sourceId ? { sourceId } : {}),
-        ...(runId ? { runId } : {}),
+        details: `confidenceScore=${topInsight.confidenceScore} (<${settings.pipeline.confidenceThreshold}). Попробуйте другой источник, измените порог в настройках или дайте подсказку (hint).`,
+        ...baseRej(),
         news,
         insights,
         topInsight,
@@ -193,8 +273,7 @@ export async function runPipeline(
       buildRejection({
         reason: 'unknown_country',
         details: `LLM вернул country="${topInsight.country}". Без направления туры подобрать нельзя.`,
-        ...(sourceId ? { sourceId } : {}),
-        ...(runId ? { runId } : {}),
+        ...baseRej(),
         news,
         insights,
         topInsight,
@@ -204,7 +283,7 @@ export async function runPipeline(
 
   const tourClient = createTourClient(env);
   const tourSearch: { country?: string; region?: string; city?: string; limit: number } = {
-    limit: 40,
+    limit: settings.pipeline.tourSearchLimit,
   };
   const country = sanitizeGeoFilter(topInsight.country);
   const region = sanitizeGeoFilter(topInsight.region);
@@ -216,14 +295,27 @@ export async function runPipeline(
   const rawTours = await tourClient.search(tourSearch);
   logger.info({ count: rawTours.length }, 'Tours fetched');
 
-  const tours = rankTours(rawTours, topInsight, { minCount: MIN_TOURS, maxCount: 8 });
-  if (tours.length < MIN_TOURS) {
+  const { kept: filteredTours, removed: filteredOut } = applyTourFilters(
+    rawTours,
+    settings.tourFilters,
+  );
+  if (filteredOut.length > 0) {
+    logger.info(
+      { removed: filteredOut.length, reasons: filteredOut.slice(0, 3).map((r) => r.reason) },
+      'Tours filtered out by tourFilters',
+    );
+  }
+
+  const tours = rankTours(filteredTours, topInsight, {
+    minCount: settings.pipeline.minTours,
+    maxCount: settings.pipeline.maxTours,
+  });
+  if (tours.length < settings.pipeline.minTours) {
     return persistRejection(
       buildRejection({
         reason: 'no_tours',
-        details: `После ранжирования осталось ${tours.length} туров (нужно минимум ${MIN_TOURS}) для страны "${topInsight.country}".`,
-        ...(sourceId ? { sourceId } : {}),
-        ...(runId ? { runId } : {}),
+        details: `После ранжирования и фильтров осталось ${tours.length} туров (нужно минимум ${settings.pipeline.minTours}) для страны "${topInsight.country}".`,
+        ...baseRej(),
         news,
         insights,
         topInsight,
@@ -232,13 +324,24 @@ export async function runPipeline(
   }
   logger.info({ count: tours.length }, 'Tours ranked');
 
-  const post = await generatePost(llm, topInsight, tours);
+  const post = await generatePost(llm, topInsight, tours, {
+    systemPrompt: effective.postGenerator,
+    temperature: settings.llm.temperature.post,
+    maxTokens: settings.llm.maxTokens,
+  });
   logger.info('Marketing post generated');
 
   const sourceNews = pickNewsForInsight(news, topInsight.sourceUrl);
 
   try {
-    const factCheck = await factCheckPost(llm, { news: sourceNews, post, tours });
+    const factCheck = await factCheckPost(llm, {
+      news: sourceNews,
+      post,
+      tours,
+      systemPrompt: effective.factCheck,
+      temperature: settings.llm.temperature.factcheck,
+      maxTokens: 1024,
+    });
     if (factCheck.violations.length > 0) {
       logger.warn({ violations: factCheck.violations }, 'Fact-check violations detected');
     }
@@ -246,10 +349,21 @@ export async function runPipeline(
     logger.warn({ err }, 'Fact-check failed (continuing)');
   }
 
+  if (settings.brand.bannedWords.length > 0) {
+    const lower = post.marketingText.toLowerCase();
+    const hits = settings.brand.bannedWords.filter((w) => lower.includes(w.toLowerCase()));
+    if (hits.length > 0) {
+      logger.warn({ bannedHit: hits }, 'Marketing post contains banned words');
+    }
+  }
+
   const landingContent = await generateLandingContent(llm, {
     insight: topInsight,
     post,
     tours,
+    systemPrompt: effective.landingContent,
+    temperature: settings.llm.temperature.landing,
+    maxTokens: settings.llm.maxTokens,
   });
   logger.info(
     {
@@ -294,6 +408,8 @@ export async function runPipeline(
       createdAt: new Date().toISOString(),
       agentVersion: AGENT_VERSION,
       ...(options.runId ? { runId: options.runId } : {}),
+      ...(hint ? { hint } : {}),
+      settingsSnapshot: snapshotSettings(settings),
     },
   };
 

@@ -6,72 +6,123 @@ import {
   isRejectedResult,
   REJECTION_REASON_LABELS,
   type RejectedResultJson,
+  type ResultMetaJson,
 } from '../api/results';
 import { useAuth } from '../hooks/useAuth';
 import type { ReactNode } from 'react';
+
+function MetaContext({ meta }: { meta: ResultMetaJson }): ReactNode {
+  const snap = meta.settingsSnapshot;
+  const hasSnap = !!snap && Object.values(snap).some((v) => v !== undefined);
+  if (!meta.hint && !hasSnap) return null;
+  return (
+    <section className="ds-card-dark text-sm">
+      <h3 className="ds-label mb-2">Контекст запуска</h3>
+      {meta.hint && (
+        <div className="mb-3">
+          <div className="text-xxs uppercase tracking-wider text-ink-muted">Уточнение маркетолога:</div>
+          <div className="mt-1 whitespace-pre-line rounded-md bg-surface-2 px-3 py-2 text-ink-primary ring-1 ring-line-subtle">
+            {meta.hint}
+          </div>
+        </div>
+      )}
+      {hasSnap && snap && (
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs text-ink-secondary sm:grid-cols-4">
+          {snap.brandName && (
+            <div>
+              <dt className="text-xxs uppercase tracking-wider text-ink-faint">Бренд</dt>
+              <dd className="text-ink-primary">{snap.brandName}</dd>
+            </div>
+          )}
+          {snap.brandVoice && (
+            <div>
+              <dt className="text-xxs uppercase tracking-wider text-ink-faint">Голос</dt>
+              <dd className="text-ink-primary">{snap.brandVoice}</dd>
+            </div>
+          )}
+          {snap.defaultAudience && (
+            <div>
+              <dt className="text-xxs uppercase tracking-wider text-ink-faint">Аудитория</dt>
+              <dd className="text-ink-primary">{snap.defaultAudience}</dd>
+            </div>
+          )}
+          {snap.confidenceThreshold !== undefined && (
+            <div>
+              <dt className="text-xxs uppercase tracking-wider text-ink-faint">Порог</dt>
+              <dd className="font-mono text-ink-primary">{snap.confidenceThreshold}</dd>
+            </div>
+          )}
+          {snap.model && (
+            <div className="col-span-2">
+              <dt className="text-xxs uppercase tracking-wider text-ink-faint">Модель</dt>
+              <dd className="font-mono text-ink-primary">{snap.model}</dd>
+            </div>
+          )}
+        </dl>
+      )}
+    </section>
+  );
+}
 
 function RejectedView({ data }: { data: RejectedResultJson }): ReactNode {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <Link to="/history" className="inline-flex items-center gap-1 text-sm text-brand hover:underline">
+        <Link to="/history" className="inline-flex items-center gap-1 text-sm text-lime hover:underline">
           <ArrowLeft size={14} /> К истории
         </Link>
       </div>
 
-      <section className="rounded-lg border border-amber-200 bg-amber-50 p-6">
-        <div className="flex items-start gap-3">
-          <AlertTriangle className="mt-0.5 shrink-0 text-amber-600" size={20} />
-          <div>
-            <h2 className="text-lg font-semibold text-amber-900">
-              Запуск пропущен · {REJECTION_REASON_LABELS[data.reason]}
-            </h2>
-            <p className="mt-2 text-sm text-amber-900/90">{data.message}</p>
-            <p className="mt-3 text-xs text-amber-800">
-              {data.sourceId ? <>Источник: <code>{data.sourceId}</code> · </> : null}
-              run-id: <code>{data.meta.runId ?? '—'}</code> ·{' '}
-              {new Date(data.meta.createdAt).toLocaleString('ru-RU')}
-            </p>
-          </div>
+      <section className="ds-notice ds-notice-warning">
+        <AlertTriangle className="mt-0.5 shrink-0" size={20} />
+        <div>
+          <h2 className="font-display text-xl font-bold uppercase tracking-tight text-warning">
+            Запуск пропущен · {REJECTION_REASON_LABELS[data.reason]}
+          </h2>
+          <p className="mt-2 text-sm text-warning/90">{data.message}</p>
+          <p className="mt-3 text-xxs text-ink-muted">
+            {data.sourceId ? (
+              <>
+                Источник: <code className="font-mono text-ink-secondary">{data.sourceId}</code> ·{' '}
+              </>
+            ) : null}
+            run-id: <code className="font-mono text-ink-secondary">{data.meta.runId ?? '—'}</code> ·{' '}
+            {new Date(data.meta.createdAt).toLocaleString('ru-RU')}
+          </p>
         </div>
       </section>
 
+      <MetaContext meta={data.meta} />
+
       {data.topInsight && (
-        <section className="rounded-lg border border-slate-200 bg-white p-5">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-            Топ-инсайт LLM (отбракован)
-          </h3>
-          <p className="mt-2 font-medium text-slate-800">{data.topInsight.title}</p>
-          <p className="mt-1 text-sm text-slate-600">{data.topInsight.shortSummary}</p>
-          <p className="mt-2 text-xs text-slate-500">
-            Страна: {data.topInsight.country} · уверенность{' '}
-            {(data.topInsight.confidenceScore * 100).toFixed(0)}%
+        <section className="ds-card">
+          <h3 className="ds-label">Топ-инсайт LLM (отбракован)</h3>
+          <p className="mt-2 font-semibold text-ink-primary">{data.topInsight.title}</p>
+          <p className="mt-1 text-sm text-ink-secondary">{data.topInsight.shortSummary}</p>
+          <p className="mt-2 text-xs text-ink-muted">
+            Страна: {data.topInsight.country} · уверенность {(data.topInsight.confidenceScore * 100).toFixed(0)}%
           </p>
           {data.topInsight.reasonWhyRelevant && (
-            <p className="mt-2 text-xs text-slate-500">
-              Объяснение LLM: {data.topInsight.reasonWhyRelevant}
-            </p>
+            <p className="mt-2 text-xs text-ink-muted">Объяснение LLM: {data.topInsight.reasonWhyRelevant}</p>
           )}
         </section>
       )}
 
       {data.newsSampled.length > 0 && (
         <section>
-          <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-            Полученные новости ({data.newsSampled.length})
-          </h3>
-          <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
+          <h3 className="ds-label mb-3">Полученные новости ({data.newsSampled.length})</h3>
+          <ul className="divide-y divide-line-subtle ds-card-dark p-0 overflow-hidden">
             {data.newsSampled.map((n) => (
-              <li key={n.url} className="px-4 py-2 text-sm">
+              <li key={n.url} className="px-4 py-3 text-sm">
                 <a
                   href={n.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="font-medium text-slate-800 hover:text-brand"
+                  className="font-semibold text-ink-primary hover:text-lime"
                 >
                   {n.title}
                 </a>
-                <div className="text-xs text-slate-500">{n.sourceName}</div>
+                <div className="text-xs text-ink-muted">{n.sourceName}</div>
               </li>
             ))}
           </ul>
@@ -80,29 +131,29 @@ function RejectedView({ data }: { data: RejectedResultJson }): ReactNode {
 
       {data.insights.length > 0 && (
         <section>
-          <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-            Все инсайты ({data.insights.length})
-          </h3>
-          <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
+          <h3 className="ds-label mb-3">Все инсайты ({data.insights.length})</h3>
+          <ul className="divide-y divide-line-subtle ds-card-dark p-0 overflow-hidden">
             {data.insights.map((i) => (
-              <li key={i.sourceUrl} className="px-4 py-2 text-sm">
+              <li key={i.sourceUrl} className="px-4 py-3 text-sm">
                 <div className="flex items-center justify-between gap-3">
-                  <span className="font-medium text-slate-800">{i.title}</span>
-                  <span className="shrink-0 text-xs text-slate-500">
+                  <span className="font-semibold text-ink-primary">{i.title}</span>
+                  <span className="shrink-0 text-xxs font-mono text-ink-muted">
                     {i.country} · {(i.confidenceScore * 100).toFixed(0)}%
                   </span>
                 </div>
-                <div className="text-xs text-slate-500">{i.travelAngle}</div>
+                <div className="text-xs text-ink-muted">{i.travelAngle}</div>
               </li>
             ))}
           </ul>
         </section>
       )}
 
-      <section className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600">
-        <p className="font-medium text-slate-800">Что можно сделать:</p>
+      <section className="ds-card-dark text-sm text-ink-secondary">
+        <p className="font-semibold text-ink-primary">Что можно сделать:</p>
         <ul className="mt-2 list-disc space-y-1 pl-5">
-          <li>Запустить генерацию без фильтра <code>--source</code> — будет проанализировано больше новостей.</li>
+          <li>
+            Запустить генерацию без фильтра <code className="font-mono text-ink-primary">--source</code> — будет проанализировано больше новостей.
+          </li>
           <li>Поменять URL источника на раздел новостей (а не главную) в настройках источников.</li>
           <li>Отключить источник, который стабильно даёт слабые инфоповоды.</li>
         </ul>
@@ -120,13 +171,13 @@ export function ResultDetailPage(): ReactNode {
     enabled: !!slug,
   });
 
-  if (!slug) return <div>Неверный slug.</div>;
-  if (query.isLoading) return <div className="text-sm text-slate-500">Загружаем…</div>;
+  if (!slug) return <div className="text-sm text-ink-muted">Неверный slug.</div>;
+  if (query.isLoading) return <div className="text-sm text-ink-muted">Загружаем…</div>;
 
   const data = query.data;
   if (!data) {
     return (
-      <div className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+      <div className="ds-notice ds-notice-warning">
         Результат не найден в репозитории. Если генерация только что завершилась — обновите через минуту.
       </div>
     );
@@ -139,65 +190,55 @@ export function ResultDetailPage(): ReactNode {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <Link to="/history" className="inline-flex items-center gap-1 text-sm text-brand hover:underline">
+        <Link to="/history" className="inline-flex items-center gap-1 text-sm text-lime hover:underline">
           <ArrowLeft size={14} /> К истории
         </Link>
-        <a
-          href={data.landing.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
-        >
+        <a href={data.landing.url} target="_blank" rel="noopener noreferrer" className="btn-primary">
           Открыть лендинг <ExternalLink size={13} />
         </a>
       </div>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-6">
-        <h2 className="text-xl font-semibold">{data.post.marketingTitle}</h2>
-        <p className="mt-1 text-sm text-slate-500">
+      <section className="ds-card-featured">
+        <h2 className="font-display text-2xl font-bold uppercase tracking-tight text-ink-primary">
+          {data.post.marketingTitle}
+        </h2>
+        <p className="mt-1 text-xs uppercase tracking-wider text-ink-muted">
           {data.insight.country}
-          {data.insight.region ? ` · ${data.insight.region}` : ''} ·
-          уверенность {(data.insight.confidenceScore * 100).toFixed(0)}%
+          {data.insight.region ? ` · ${data.insight.region}` : ''} · уверенность {(data.insight.confidenceScore * 100).toFixed(0)}%
         </p>
-        <div className="mt-4 whitespace-pre-line text-sm text-slate-700">
-          {data.post.marketingText}
-        </div>
+        <div className="mt-4 whitespace-pre-line text-sm text-ink-secondary">{data.post.marketingText}</div>
       </section>
 
+      <MetaContext meta={data.meta} />
+
       <section className="grid gap-6 md:grid-cols-2">
-        <div className="rounded-lg border border-slate-200 bg-white p-5">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-            Источник
-          </h3>
-          <p className="mt-2 font-medium text-slate-800">{data.news.title}</p>
-          <p className="mt-1 text-sm text-slate-600">{data.news.summary}</p>
+        <div className="ds-card">
+          <h3 className="ds-label">Источник</h3>
+          <p className="mt-2 font-semibold text-ink-primary">{data.news.title}</p>
+          <p className="mt-1 text-sm text-ink-secondary">{data.news.summary}</p>
           <a
             href={data.news.sourceUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-3 inline-flex items-center gap-1 text-sm text-brand hover:underline"
+            className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-lime hover:underline"
           >
             {data.news.sourceName} <ExternalLink size={12} />
           </a>
         </div>
-        <div className="rounded-lg border border-slate-200 bg-white p-5">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-            Travel-angle
-          </h3>
-          <p className="mt-2 text-sm text-slate-700">{data.insight.travelAngle}</p>
+        <div className="ds-card">
+          <h3 className="ds-label">Travel-angle</h3>
+          <p className="mt-2 text-sm text-ink-secondary">{data.insight.travelAngle}</p>
           {data.insight.seasonality && (
-            <p className="mt-2 text-xs text-slate-500">Сезон: {data.insight.seasonality}</p>
+            <p className="mt-2 text-xs text-ink-muted">Сезон: {data.insight.seasonality}</p>
           )}
           {data.insight.targetAudience && (
-            <p className="mt-1 text-xs text-slate-500">Аудитория: {data.insight.targetAudience}</p>
+            <p className="mt-1 text-xs text-ink-muted">Аудитория: {data.insight.targetAudience}</p>
           )}
         </div>
       </section>
 
       <section>
-        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Туры ({data.tours.length})
-        </h3>
+        <h3 className="ds-label mb-3">Туры ({data.tours.length})</h3>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {data.tours.map((tour) => (
             <a
@@ -205,19 +246,19 @@ export function ResultDetailPage(): ReactNode {
               href={tour.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="overflow-hidden rounded-lg border border-slate-200 bg-white transition hover:border-brand"
+              className="overflow-hidden rounded-xl bg-surface-2 border border-line-subtle transition-all duration-200 hover:border-line-lime hover:-translate-y-0.5 hover:shadow-lime-glow"
             >
               {tour.imageUrl ? (
                 <img src={tour.imageUrl} alt={tour.title} className="h-36 w-full object-cover" />
               ) : (
-                <div className="h-36 bg-gradient-to-br from-slate-200 to-slate-300" />
+                <div className="h-36 bg-gradient-to-br from-surface-3 to-surface-4" />
               )}
               <div className="p-3">
-                <p className="text-sm font-medium text-slate-800">{tour.title}</p>
-                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                  {tour.rating != null && <span>★ {tour.rating.toFixed(1)}</span>}
+                <p className="text-sm font-semibold text-ink-primary">{tour.title}</p>
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
+                  {tour.rating != null && <span className="text-lime">★ {tour.rating.toFixed(1)}</span>}
                   {tour.duration && <span>{tour.duration}</span>}
-                  {tour.price && <span className="font-medium text-slate-700">{tour.price}</span>}
+                  {tour.price && <span className="font-semibold text-ink-primary">{tour.price}</span>}
                 </div>
               </div>
             </a>
@@ -226,14 +267,12 @@ export function ResultDetailPage(): ReactNode {
       </section>
 
       <section>
-        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Превью лендинга
-        </h3>
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white p-4">
+        <h3 className="ds-label mb-3">Превью лендинга</h3>
+        <div className="overflow-hidden rounded-xl bg-surface-2 border border-line-subtle p-4">
           <iframe
             src={data.landing.url}
             title="Landing preview"
-            className="mx-auto block h-[568px] w-[320px] rounded-md border border-slate-200"
+            className="mx-auto block h-[568px] w-[320px] rounded-md border border-line"
             sandbox="allow-scripts allow-same-origin"
           />
         </div>

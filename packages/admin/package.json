@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Admin SPA for YouTravel marketing agent: sources CRUD + pipeline trigger + history",
+  "description": "News2Trip — admin SPA for the YouTravel marketing AI agent: sources, prompts, settings, pipeline trigger, history",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

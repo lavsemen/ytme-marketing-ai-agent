@@ -7,6 +7,10 @@ on:
         description: 'Source id from sources.json (or "all" for all enabled)'
         required: false
         default: 'all'
+      hint:
+        description: 'Optional hint for this run (passed to all LLM calls). Example: focus on family travel, premium audience.'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -49,10 +53,14 @@ jobs:
           YOUTRAVEL_IMAGE_BASE_URL: ${{ vars.YOUTRAVEL_IMAGE_BASE_URL || 'https://youtravel.me/' }}
           LANDING_BASE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
           LOG_LEVEL: info
+          RUN_HINT: ${{ inputs.hint }}
         run: |
-          yarn workspace @ytme/agent generate \
-            --source "${{ inputs.source }}" \
-            --run-id "${{ github.run_id }}"
+          set -e
+          ARGS=(--source "${{ inputs.source }}" --run-id "${{ github.run_id }}")
+          if [ -n "${RUN_HINT}" ]; then
+            ARGS+=(--hint "${RUN_HINT}")
+          fi
+          yarn workspace @ytme/agent generate "${ARGS[@]}"
 
       - name: Commit & push results
         run: |

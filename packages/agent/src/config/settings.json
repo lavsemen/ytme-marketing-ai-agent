@@ -1,0 +1,38 @@
+{
+  "pipeline": {
+    "confidenceThreshold": 0.4,
+    "minTours": 3,
+    "maxTours": 8,
+    "tourSearchLimit": 40,
+    "newsMaxAgeDays": 21,
+    "newsMaxPerSource": 5
+  },
+  "llm": {
+    "temperature": { "analyzer": 0.3, "post": 0.6, "landing": 0.5, "factcheck": 0 },
+    "maxTokens": 3500
+  },
+  "brand": {
+    "name": "YouTravel.me",
+    "voice": "friendly",
+    "defaultAudience": "mixed",
+    "allowEmoji": true,
+    "bannedWords": [],
+    "requiredHashtags": []
+  },
+  "geo": {
+    "prioritized": [],
+    "blocked": []
+  },
+  "seasonalPriorities": {
+    "12-02": [],
+    "03-05": [],
+    "06-08": [],
+    "09-11": []
+  },
+  "tourFilters": {
+    "minPriceRub": null,
+    "maxPriceRub": null,
+    "minNights": null,
+    "maxNights": null
+  }
+}

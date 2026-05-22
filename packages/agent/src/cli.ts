@@ -15,11 +15,16 @@ program
   .description('Run the full pipeline: news -> insight -> tours -> post -> landing')
   .option('-s, --source <id>', 'Run for a specific source id (default: all enabled)')
   .option('--run-id <id>', 'External run id (e.g. GitHub Actions run id)')
+  .option(
+    '--hint <text>',
+    'Marketer hint for this run (passed to all LLM calls): e.g. "focus on family travel"',
+  )
   .action(async (opts) => {
     try {
       const result = await runPipeline({
         ...(opts.source ? { sourceId: opts.source as string } : {}),
         ...(opts.runId ? { runId: opts.runId as string } : {}),
+        ...(opts.hint ? { hint: opts.hint as string } : {}),
       });
 
       if (isRejected(result)) {

@@ -7,6 +7,7 @@ export type RejectionReason =
   | 'no_news'
   | 'low_confidence'
   | 'unknown_country'
+  | 'blocked_country'
   | 'no_tours'
   | 'llm_error';
 
@@ -37,6 +38,20 @@ export interface InsightJson {
   reasonWhyRelevant?: string;
 }
 
+export interface ResultMetaJson {
+  createdAt: string;
+  agentVersion: string;
+  runId?: string;
+  hint?: string;
+  settingsSnapshot?: {
+    brandName?: string;
+    brandVoice?: string;
+    defaultAudience?: string;
+    model?: string;
+    confidenceThreshold?: number;
+  };
+}
+
 export interface PipelineResultJson {
   status?: 'success';
   news: { title: string; sourceName: string; sourceUrl: string; summary: string };
@@ -59,7 +74,7 @@ export interface PipelineResultJson {
     imageUrl?: string;
   };
   landing: { slug: string; path: string; url: string };
-  meta: { createdAt: string; agentVersion: string; runId?: string };
+  meta: ResultMetaJson;
 }
 
 export interface RejectedResultJson {
@@ -70,7 +85,7 @@ export interface RejectedResultJson {
   newsSampled: { title: string; url: string; sourceName: string }[];
   insights: InsightJson[];
   topInsight?: InsightJson;
-  meta: { createdAt: string; agentVersion: string; runId?: string };
+  meta: ResultMetaJson;
 }
 
 export type ResultJson = PipelineResultJson | RejectedResultJson;
@@ -87,6 +102,7 @@ export const REJECTION_REASON_LABELS: Record<RejectionReason, string> = {
   no_news: 'Нет новостей',
   low_confidence: 'Низкая релевантность',
   unknown_country: 'Не определена страна',
+  blocked_country: 'Страна в чёрном списке',
   no_tours: 'Мало туров',
   llm_error: 'Ошибка LLM',
 };

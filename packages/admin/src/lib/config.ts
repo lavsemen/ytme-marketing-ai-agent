@@ -4,6 +4,8 @@ export const CONFIG = {
   workflowFile: import.meta.env.VITE_GENERATE_WORKFLOW_FILE ?? 'generate.yml',
   landingBaseUrl: (import.meta.env.VITE_LANDING_BASE_URL ?? '').replace(/\/+$/, ''),
   sourcesPath: 'packages/agent/src/config/sources.json',
+  promptsPath: 'packages/agent/src/config/prompts.json',
+  settingsPath: 'packages/agent/src/config/settings.json',
   resultsIndexPath: 'out/results/index.json',
   branch: 'main',
 } as const;

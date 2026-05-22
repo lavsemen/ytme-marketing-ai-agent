@@ -23,21 +23,23 @@ export function LoginPage(): ReactNode {
   const classicPatUrl = 'https://github.com/settings/tokens/new?scopes=repo,workflow';
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
-      <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-sm">
+    <div className="flex min-h-screen items-center justify-center bg-bg px-4">
+      <div className="w-full max-w-md ds-card-dark">
         <div className="mb-6 flex items-center gap-3">
-          <div className="rounded-md bg-brand p-2 text-white">
+          <div className="rounded-md bg-lime p-2 text-bg">
             <KeyRound size={20} />
           </div>
           <div>
-            <h1 className="text-lg font-semibold">YouTravel Marketing AI</h1>
-            <p className="text-sm text-slate-500">Войти через GitHub PAT</p>
+            <h1 className="font-display text-2xl font-black leading-none tracking-tight text-ink-primary">
+              News2<span className="text-lime">Trip</span>
+            </h1>
+            <p className="mt-1 text-xs text-ink-muted">Войти через GitHub PAT</p>
           </div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="pat" className="block text-sm font-medium text-slate-700">
+            <label htmlFor="pat" className="ds-label">
               GitHub Personal Access Token
             </label>
             <input
@@ -48,67 +50,70 @@ export function LoginPage(): ReactNode {
               placeholder="github_pat_..."
               autoComplete="off"
               spellCheck={false}
-              className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              className="ds-input font-mono"
               required
             />
           </div>
 
-          {error && (
-            <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
-              Не удалось войти: {error}
-            </div>
-          )}
+          {error && <div className="ds-notice ds-notice-danger">Не удалось войти: {error}</div>}
 
-          <button
-            type="submit"
-            disabled={loading || !pat}
-            className="w-full rounded-md bg-brand px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-50"
-          >
+          <button type="submit" disabled={loading || !pat} className="btn-primary w-full justify-center">
             {loading ? 'Проверяем…' : 'Войти'}
           </button>
         </form>
 
-        <div className="mt-6 space-y-3 rounded-md bg-slate-50 px-4 py-3 text-xs text-slate-600">
+        <div className="mt-6 space-y-4 rounded-lg bg-surface-2 px-4 py-4 text-xs text-ink-secondary">
           <div>
-            <p className="mb-2 font-medium text-slate-700">Вариант A — Fine-grained PAT (рекомендуется)</p>
+            <p className="mb-2 text-xxs font-bold uppercase tracking-widest text-ink-muted">
+              Вариант A — Fine-grained PAT (рекомендуется)
+            </p>
             <ol className="ml-4 list-decimal space-y-1">
               <li>
                 <a
                   href={fineGrainedUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-brand hover:underline"
+                  className="inline-flex items-center gap-1 text-lime hover:underline"
                 >
                   Создать fine-grained token <ExternalLink size={11} />
                 </a>
               </li>
-              <li>Repository access: только <code>{CONFIG.repoName || 'этот репо'}</code>.</li>
               <li>
-                <strong>Contents → Read and write</strong> (не Read-only).
+                Repository access: только <code className="font-mono text-ink-primary">{CONFIG.repoName || 'этот репо'}</code>.
               </li>
               <li>
-                <strong>Actions → Read and write</strong> — обязательно для кнопки «Запустить генерацию».
+                <strong className="text-ink-primary">Contents → Read and write</strong> (не Read-only).
+              </li>
+              <li>
+                <strong className="text-ink-primary">Actions → Read and write</strong> — обязательно для кнопки «Запустить генерацию».
               </li>
               <li>Metadata → Read (обычно по умолчанию).</li>
             </ol>
           </div>
           <div>
-            <p className="mb-2 font-medium text-slate-700">Вариант B — Classic PAT (проще)</p>
+            <p className="mb-2 text-xxs font-bold uppercase tracking-widest text-ink-muted">
+              Вариант B — Classic PAT (проще)
+            </p>
             <ol className="ml-4 list-decimal space-y-1">
               <li>
                 <a
                   href={classicPatUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-brand hover:underline"
+                  className="inline-flex items-center gap-1 text-lime hover:underline"
                 >
                   Создать classic token <ExternalLink size={11} />
                 </a>
               </li>
-              <li>Отметьте scopes: <code>repo</code> и <code>workflow</code>.</li>
+              <li>
+                Отметьте scopes: <code className="font-mono text-ink-primary">repo</code> и{' '}
+                <code className="font-mono text-ink-primary">workflow</code>.
+              </li>
             </ol>
           </div>
-          <p>Токен хранится только в localStorage этого браузера. После смены прав — перелогиньтесь.</p>
+          <p className="text-ink-muted">
+            Токен хранится только в localStorage этого браузера. После смены прав — перелогиньтесь.
+          </p>
         </div>
       </div>
     </div>

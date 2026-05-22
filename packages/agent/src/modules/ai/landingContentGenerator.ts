@@ -1,5 +1,4 @@
 import type { LlmClient } from './llmClient.js';
-import { LANDING_CONTENT_PROMPT } from './prompts.js';
 import { extractJson } from './anthropicClient.js';
 import { LandingContentSchema, type LandingContent } from '../../types/landingContent.js';
 import type { TravelInsight } from '../../types/insight.js';
@@ -11,6 +10,9 @@ export interface GenerateLandingContentInput {
   insight: TravelInsight;
   post: MarketingPost;
   tours: Tour[];
+  systemPrompt: string;
+  temperature?: number;
+  maxTokens?: number;
 }
 
 const REASON_ACCENTS = ['#8600EF', '#1A5A3A', '#C43A2A', '#DE8706'];
@@ -133,11 +135,11 @@ export async function generateLandingContent(
   let raw: string;
   try {
     raw = await llm.complete({
-      system: LANDING_CONTENT_PROMPT,
+      system: input.systemPrompt,
       user: JSON.stringify(payload, null, 2),
       jsonMode: true,
-      maxTokens: 3500,
-      temperature: 0.5,
+      maxTokens: input.maxTokens ?? 3500,
+      temperature: input.temperature ?? 0.5,
     });
   } catch (err) {
     logger.warn({ err }, 'Landing content LLM call failed — using fallback');

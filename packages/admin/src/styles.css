@@ -2,14 +2,256 @@
 @tailwind components;
 @tailwind utilities;
 
-html,
-body,
-#root {
-  height: 100%;
+/* ── DESIGN SYSTEM TOKENS (CSS custom props) ──────────────── */
+:root {
+  --lime: #abc232;
+  --lime-dark: #7fa40c;
+  --lime-dim: #1a1f07;
+  --lime-mid: #2a3200;
+
+  --bg: #0d0d0d;
+  --surface-1: #161616;
+  --surface-2: #1e1e1e;
+  --surface-3: #252525;
+  --surface-4: #2e2e2e;
+
+  --ink-primary: #ffffff;
+  --ink-secondary: #aaaaaa;
+  --ink-muted: #888888;
+  --ink-faint: #555555;
+
+  --line-subtle: rgba(255, 255, 255, 0.06);
+  --line-default: rgba(255, 255, 255, 0.1);
+  --line-strong: rgba(255, 255, 255, 0.18);
+  --line-lime: rgba(171, 194, 50, 0.4);
+
+  --success: #abc232;
+  --warning: #e8a020;
+  --danger: #e24b4a;
+  --info: #378add;
 }
 
-body {
-  background-color: #f8fafc;
-  color: #0f172a;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    @apply bg-bg text-ink-primary font-sans;
+    font-size: 15px;
+    line-height: 1.6;
+  }
+
+  /* Headings use display font by default; pages can override via font-sans. */
+  h1,
+  h2,
+  h3 {
+    @apply font-display tracking-tight;
+  }
+
+  /* Form controls inherit dark surface look unless overridden */
+  input[type='text'],
+  input[type='number'],
+  input[type='url'],
+  input[type='password'],
+  input[type='email'],
+  input[type='search'],
+  select,
+  textarea {
+    color-scheme: dark;
+  }
+  /* Make number-input spinner buttons less obtrusive on dark bg */
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button {
+    opacity: 0.5;
+  }
+
+  /* Scrollbar on dark theme */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--surface-1);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--surface-3);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--surface-4);
+  }
+}
+
+@layer components {
+  /* ── Buttons ────────────────────────────────────── */
+  .btn {
+    @apply inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-bold tracking-wide
+           transition-all duration-200 ease-ds disabled:cursor-not-allowed disabled:opacity-50;
+    letter-spacing: 0.04em;
+  }
+  .btn-primary {
+    @apply btn bg-lime text-bg hover:bg-lime-dark active:scale-[0.97];
+  }
+  .btn-outline {
+    @apply btn bg-transparent text-lime border border-line-lime hover:bg-lime-dim hover:border-lime;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-ink-secondary border border-line
+           hover:bg-surface-3 hover:text-ink-primary hover:border-line-strong;
+  }
+  .btn-danger {
+    @apply btn bg-transparent text-danger border;
+    border-color: rgba(226, 75, 74, 0.4);
+  }
+  .btn-danger:hover {
+    background: rgba(226, 75, 74, 0.1);
+  }
+  .btn-sm {
+    @apply text-xs px-3 py-1.5;
+  }
+  .btn-lg {
+    @apply text-base px-8 py-3;
+  }
+
+  /* ── Form controls ───────────────────────────────── */
+  .ds-input {
+    @apply w-full rounded-md bg-surface-2 border border-line px-4 py-2 text-sm
+           text-ink-primary placeholder:text-ink-faint
+           outline-none transition-colors duration-200
+           hover:border-line-strong
+           focus:border-lime focus:ring-2 focus:ring-lime/20;
+  }
+  .ds-input-sm {
+    @apply ds-input px-3 py-1.5 text-sm;
+  }
+  textarea.ds-input {
+    @apply min-h-[96px] resize-y;
+  }
+  select.ds-input {
+    @apply cursor-pointer appearance-none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23888'%3E%3Cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.06l3.71-3.83a.75.75 0 111.08 1.04l-4.25 4.4a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z' clip-rule='evenodd'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.5rem center;
+    background-size: 1.25em;
+    padding-right: 2.25rem;
+  }
+  .ds-label {
+    @apply block text-xxs font-bold uppercase tracking-widest text-ink-muted mb-1.5;
+  }
+
+  /* ── Cards ──────────────────────────────────────── */
+  .ds-card {
+    @apply rounded-xl bg-surface-2 shadow-ds-md p-6;
+  }
+  .ds-card-dark {
+    @apply rounded-xl bg-surface-1 border border-line-subtle p-6;
+  }
+  .ds-card-lime {
+    @apply ds-card border-t-[3px] border-lime;
+  }
+  .ds-card-featured {
+    @apply rounded-xl bg-surface-2 border border-line-lime shadow-lime-glow p-6;
+  }
+
+  /* ── Tables ─────────────────────────────────────── */
+  .ds-table-wrap {
+    @apply overflow-x-auto rounded-xl border border-line-subtle bg-surface-2;
+  }
+  .ds-table {
+    @apply w-full text-sm border-collapse;
+  }
+  .ds-table th {
+    @apply text-left px-4 py-3 text-xxs font-bold uppercase tracking-widest text-ink-muted
+           bg-surface-1 border-b border-line-subtle whitespace-nowrap;
+  }
+  .ds-table td {
+    @apply px-4 py-3 text-ink-secondary border-b border-line-subtle align-middle;
+  }
+  .ds-table tr:last-child td {
+    @apply border-b-0;
+  }
+  .ds-table tr:hover td {
+    background: var(--surface-1);
+    color: var(--ink-primary);
+  }
+
+  /* ── Badges / Tags ──────────────────────────────── */
+  .ds-badge {
+    @apply inline-flex items-center gap-1 px-2.5 py-1 rounded-pill text-xxs font-bold
+           uppercase tracking-wider whitespace-nowrap;
+  }
+  .ds-badge-lime {
+    @apply ds-badge bg-lime-dim text-lime border border-line-lime;
+  }
+  .ds-badge-success {
+    @apply ds-badge text-lime;
+    background: rgba(171, 194, 50, 0.12);
+  }
+  .ds-badge-warning {
+    @apply ds-badge text-warning;
+    background: rgba(232, 160, 32, 0.12);
+  }
+  .ds-badge-danger {
+    @apply ds-badge text-danger;
+    background: rgba(226, 75, 74, 0.12);
+  }
+  .ds-badge-info {
+    @apply ds-badge text-info;
+    background: rgba(55, 138, 221, 0.12);
+  }
+  .ds-badge-muted {
+    @apply ds-badge bg-surface-3 text-ink-muted;
+  }
+  .ds-tag {
+    @apply inline-flex items-center px-3 py-1 rounded-pill text-xxs font-semibold
+           bg-surface-3 text-ink-secondary border border-line-subtle
+           transition-colors duration-200 hover:bg-surface-4 hover:text-ink-primary;
+  }
+
+  /* ── Notices ────────────────────────────────────── */
+  .ds-notice {
+    @apply flex items-start gap-3 rounded-lg px-5 py-4 text-sm leading-relaxed border-l-[3px];
+  }
+  .ds-notice-info {
+    border-color: var(--info);
+    background: rgba(55, 138, 221, 0.08);
+    color: #7bbdff;
+  }
+  .ds-notice-success {
+    border-color: var(--lime);
+    background: rgba(171, 194, 50, 0.08);
+    color: var(--lime);
+  }
+  .ds-notice-warning {
+    border-color: var(--warning);
+    background: rgba(232, 160, 32, 0.08);
+    color: var(--warning);
+  }
+  .ds-notice-danger {
+    border-color: var(--danger);
+    background: rgba(226, 75, 74, 0.08);
+    color: var(--danger);
+  }
+
+  /* ── Top-nav links ──────────────────────────────── */
+  .nav-link {
+    @apply inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-semibold
+           text-ink-muted transition-colors duration-200 hover:bg-surface-3 hover:text-ink-primary;
+  }
+  .nav-link-active {
+    @apply text-lime bg-lime-dim border border-line-lime hover:bg-lime-dim hover:text-lime;
+  }
+}
+
+@layer utilities {
+  .text-xxs {
+    font-size: 11px;
+    line-height: 1.5;
+  }
 }

@@ -1,5 +1,4 @@
 import type { LlmClient } from './llmClient.js';
-import { POST_GENERATOR_PROMPT, FACT_CHECK_PROMPT } from './prompts.js';
 import { extractJson } from './anthropicClient.js';
 import { MarketingPostSchema, type MarketingPost } from '../../types/post.js';
 import type { Tour } from '../../types/tour.js';
@@ -8,10 +7,17 @@ import type { NewsItem } from '../../types/news.js';
 import { logger } from '../../utils/logger.js';
 import { z } from 'zod';
 
+export interface GeneratePostOptions {
+  systemPrompt: string;
+  temperature?: number;
+  maxTokens?: number;
+}
+
 export async function generatePost(
   llm: LlmClient,
   insight: TravelInsight,
   tours: Tour[],
+  options: GeneratePostOptions,
 ): Promise<MarketingPost> {
   if (tours.length === 0) {
     throw new Error('generatePost: empty tours list');
@@ -33,11 +39,11 @@ export async function generatePost(
   logger.info({ tours: tours.length, country: insight.country }, 'Generating marketing post');
 
   const raw = await llm.complete({
-    system: POST_GENERATOR_PROMPT,
+    system: options.systemPrompt,
     user: JSON.stringify(payload, null, 2),
     jsonMode: true,
-    maxTokens: 2048,
-    temperature: 0.6,
+    maxTokens: options.maxTokens ?? 2048,
+    temperature: options.temperature ?? 0.6,
   });
 
   let parsed: unknown;
@@ -65,13 +71,18 @@ export interface FactCheckResult {
   violations: string[];
 }
 
+export interface FactCheckOptions {
+  news: NewsItem;
+  post: MarketingPost;
+  tours: Tour[];
+  systemPrompt: string;
+  temperature?: number;
+  maxTokens?: number;
+}
+
 export async function factCheckPost(
   llm: LlmClient,
-  options: {
-    news: NewsItem;
-    post: MarketingPost;
-    tours: Tour[];
-  },
+  options: FactCheckOptions,
 ): Promise<FactCheckResult> {
   const payload = {
     sourceText: `${options.news.title}\n\n${options.news.summary ?? options.news.text ?? ''}`,
@@ -82,11 +93,11 @@ export async function factCheckPost(
   logger.debug('Running fact-check pass');
 
   const raw = await llm.complete({
-    system: FACT_CHECK_PROMPT,
+    system: options.systemPrompt,
     user: JSON.stringify(payload, null, 2),
     jsonMode: true,
-    maxTokens: 1024,
-    temperature: 0,
+    maxTokens: options.maxTokens ?? 1024,
+    temperature: options.temperature ?? 0,
   });
 
   let parsed: unknown;

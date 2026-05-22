@@ -11,23 +11,14 @@ import type { ReactNode } from 'react';
 
 function StatusBadge({ entry }: { entry: ResultMeta }): ReactNode {
   if (entry.status === 'rejected') {
-    const label = entry.rejectionReason
-      ? REJECTION_REASON_LABELS[entry.rejectionReason]
-      : 'Пропущен';
+    const label = entry.rejectionReason ? REJECTION_REASON_LABELS[entry.rejectionReason] : 'Пропущен';
     return (
-      <span
-        title={entry.rejectionMessage ?? label}
-        className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800"
-      >
+      <span title={entry.rejectionMessage ?? label} className="ds-badge-warning">
         Пропущен · {label}
       </span>
     );
   }
-  return (
-    <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
-      Готово
-    </span>
-  );
+  return <span className="ds-badge-success">Готово</span>;
 }
 
 export function HistoryPage(): ReactNode {
@@ -38,36 +29,37 @@ export function HistoryPage(): ReactNode {
     refetchInterval: 30_000,
   });
 
-  if (query.isLoading) return <div className="text-sm text-slate-500">Загружаем историю…</div>;
+  if (query.isLoading) return <div className="text-sm text-ink-muted">Загружаем историю…</div>;
 
   const results = query.data ?? [];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div>
-        <h2 className="text-xl font-semibold">История генераций</h2>
-        <p className="text-sm text-slate-500">
-          Список из ветки <code>main</code> репозитория (актуальнее, чем кэш GitHub Pages).
-          Превью лендингов на Pages обновляется после workflow Deploy to GitHub Pages.
+        <h2 className="font-display text-3xl font-black uppercase tracking-tight text-ink-primary">
+          История <span className="text-lime">генераций</span>
+        </h2>
+        <p className="mt-1 text-sm text-ink-muted">
+          Список из ветки <code className="font-mono text-ink-secondary">main</code> репозитория (актуальнее, чем кэш GitHub Pages). Превью лендингов на Pages обновляется после workflow Deploy to GitHub Pages.
         </p>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-        <table className="min-w-full divide-y divide-slate-200 text-sm">
-          <thead className="bg-slate-50 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
+      <div className="ds-table-wrap">
+        <table className="ds-table">
+          <thead>
             <tr>
-              <th className="px-4 py-2">Дата</th>
-              <th className="px-4 py-2">Статус</th>
-              <th className="px-4 py-2">Новость</th>
-              <th className="px-4 py-2">Страна</th>
-              <th className="px-4 py-2">Туров</th>
-              <th className="px-4 py-2"></th>
+              <th>Дата</th>
+              <th>Статус</th>
+              <th>Новость</th>
+              <th>Страна</th>
+              <th>Туров</th>
+              <th></th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody>
             {results.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                <td colSpan={6} className="text-center text-ink-muted">
                   Пока ничего не сгенерировано. Запустите первый pipeline.
                 </td>
               </tr>
@@ -75,38 +67,38 @@ export function HistoryPage(): ReactNode {
             {results.map((r) => {
               const isRejected = r.status === 'rejected';
               return (
-                <tr key={r.slug} className="hover:bg-slate-50">
-                  <td className="px-4 py-2 text-slate-500">
+                <tr key={r.slug}>
+                  <td className="whitespace-nowrap font-mono text-xs text-ink-muted">
                     {new Date(r.createdAt).toLocaleString('ru-RU')}
                   </td>
-                  <td className="px-4 py-2">
+                  <td>
                     <StatusBadge entry={r} />
                   </td>
-                  <td className="px-4 py-2">
+                  <td>
                     <Link
                       to={`/results/${r.slug}`}
-                      className="font-medium text-slate-800 hover:text-brand"
+                      className="font-semibold text-ink-primary hover:text-lime"
                     >
                       {r.newsTitle}
                     </Link>
-                    <div className="text-xs text-slate-400">{r.slug}</div>
+                    <div className="text-xs text-ink-faint">{r.slug}</div>
                   </td>
-                  <td className="px-4 py-2 text-slate-600">{r.country ?? '—'}</td>
-                  <td className="px-4 py-2 text-slate-600">{isRejected ? '—' : r.toursCount}</td>
-                  <td className="px-4 py-2 text-right">
+                  <td>{r.country ?? '—'}</td>
+                  <td className="font-mono text-xs">{isRejected ? '—' : r.toursCount}</td>
+                  <td className="text-right">
                     {isRejected ? (
-                      <span className="text-xs text-slate-400">Нет лендинга</span>
+                      <span className="text-xs text-ink-faint">Нет лендинга</span>
                     ) : r.landingUrl ? (
                       <a
                         href={r.landingUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-sm text-brand hover:underline"
+                        className="inline-flex items-center gap-1 text-sm font-semibold text-lime hover:underline"
                       >
                         Лендинг <ExternalLink size={12} />
                       </a>
                     ) : (
-                      <span className="text-xs text-slate-400">—</span>
+                      <span className="text-xs text-ink-faint">—</span>
                     )}
                   </td>
                 </tr>

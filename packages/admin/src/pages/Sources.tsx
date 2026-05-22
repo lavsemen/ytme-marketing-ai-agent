@@ -117,92 +117,90 @@ export function SourcesPage(): ReactNode {
   }
 
   if (query.isLoading) {
-    return <div className="text-sm text-slate-500">Загружаем источники…</div>;
+    return <div className="text-sm text-ink-muted">Загружаем источники…</div>;
   }
   if (query.isError) {
     return (
-      <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+      <div className="ds-notice ds-notice-danger">
         Ошибка загрузки: {(query.error as Error).message}
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="space-y-5">
+      <div className="flex items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-semibold">Источники новостей</h2>
-          <p className="text-sm text-slate-500">
-            Все правки коммитятся в <code>main</code> через GitHub API.
+          <h2 className="font-display text-3xl font-black uppercase tracking-tight text-ink-primary">
+            Источники <span className="text-lime">новостей</span>
+          </h2>
+          <p className="mt-1 text-sm text-ink-muted">
+            Все правки коммитятся в <code className="font-mono text-ink-secondary">main</code> через GitHub API.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={openCreate}
-          className="inline-flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark"
-        >
+        <button type="button" onClick={openCreate} className="btn-primary">
           <Plus size={16} /> Добавить
         </button>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-        <table className="min-w-full divide-y divide-slate-200 text-sm">
-          <thead className="bg-slate-50 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
+      <div className="ds-table-wrap">
+        <table className="ds-table">
+          <thead>
             <tr>
-              <th className="px-4 py-2">Название</th>
-              <th className="px-4 py-2">URL</th>
-              <th className="px-4 py-2">Тип</th>
-              <th className="px-4 py-2">Lang</th>
-              <th className="px-4 py-2">Статус</th>
-              <th className="px-4 py-2"></th>
+              <th>Название</th>
+              <th>URL</th>
+              <th>Тип</th>
+              <th>Lang</th>
+              <th>Статус</th>
+              <th></th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody>
             {sources.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-slate-500">
+                <td colSpan={6} className="text-center text-ink-muted">
                   Источников пока нет. Добавьте первый.
                 </td>
               </tr>
             )}
             {sources.map((s) => (
               <tr key={s.id}>
-                <td className="px-4 py-2 font-medium text-slate-800">
-                  {s.name}
-                  <div className="text-xs text-slate-400">{s.id}</div>
+                <td>
+                  <div className="font-semibold text-ink-primary">{s.name}</div>
+                  <div className="text-xs text-ink-faint">{s.id}</div>
                 </td>
-                <td className="px-4 py-2 max-w-xs truncate text-slate-600">
+                <td className="max-w-xs truncate">
                   <a
                     href={s.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-brand hover:underline"
+                    className="text-lime hover:underline"
                   >
                     {s.url}
                   </a>
                 </td>
-                <td className="px-4 py-2 text-slate-600">{s.type ?? 'auto'}</td>
-                <td className="px-4 py-2 text-slate-600">{s.language}</td>
-                <td className="px-4 py-2">
+                <td>
+                  <span className="font-mono text-xs text-ink-secondary">{s.type ?? 'auto'}</span>
+                </td>
+                <td>
+                  <span className="font-mono text-xs text-ink-secondary">{s.language}</span>
+                </td>
+                <td>
                   <button
                     type="button"
                     onClick={() => handleToggle(s)}
                     disabled={saveMutation.isPending}
-                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
-                      s.enabled
-                        ? 'bg-emerald-50 text-emerald-700'
-                        : 'bg-slate-100 text-slate-500'
-                    }`}
+                    className={s.enabled ? 'ds-badge-success' : 'ds-badge-muted'}
                   >
                     {s.enabled ? <Check size={12} /> : <X size={12} />}
                     {s.enabled ? 'Включён' : 'Выключен'}
                   </button>
                 </td>
-                <td className="px-4 py-2 text-right">
+                <td className="text-right">
                   <button
                     type="button"
                     onClick={() => openEdit(s)}
-                    className="rounded p-1 text-slate-500 hover:bg-slate-100"
+                    className="rounded-md p-1.5 text-ink-muted transition-colors hover:bg-surface-3 hover:text-ink-primary"
                     title="Изменить"
                   >
                     <Pencil size={14} />
@@ -211,7 +209,7 @@ export function SourcesPage(): ReactNode {
                     type="button"
                     onClick={() => handleDelete(s)}
                     disabled={saveMutation.isPending}
-                    className="rounded p-1 text-red-500 hover:bg-red-50"
+                    className="ml-1 rounded-md p-1.5 text-danger transition-colors hover:bg-danger/10"
                     title="Удалить"
                   >
                     <Trash2 size={14} />
@@ -236,7 +234,7 @@ export function SourcesPage(): ReactNode {
       )}
 
       {saveMutation.isError && (
-        <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="ds-notice ds-notice-danger">
           Не удалось сохранить: {(saveMutation.error as Error).message}
         </div>
       )}
@@ -287,81 +285,61 @@ function SourceFormDialog({ initial, onClose, onSave, submitting }: DialogProps)
   };
 
   return (
-    <div className="fixed inset-0 z-10 flex items-center justify-center bg-slate-900/40 p-4">
-      <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
+    <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-md ds-card-dark border border-line">
         <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold">
+          <h3 className="font-display text-xl font-bold uppercase tracking-tight text-ink-primary">
             {initial ? 'Изменить источник' : 'Новый источник'}
           </h3>
           <button
             type="button"
             onClick={onClose}
-            className="rounded p-1 text-slate-500 hover:bg-slate-100"
+            className="rounded-md p-1.5 text-ink-muted transition-colors hover:bg-surface-3 hover:text-ink-primary"
           >
             <X size={18} />
           </button>
         </div>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <FormField label="ID (kebab-case)" error={errors.id?.message}>
             <input
               {...register('id')}
               disabled={!!initial}
-              className="form-input"
+              className="ds-input font-mono"
               placeholder="lenta-travel"
             />
           </FormField>
           <FormField label="Название" error={errors.name?.message}>
-            <input {...register('name')} className="form-input" placeholder="Lenta.ru" />
+            <input {...register('name')} className="ds-input" placeholder="Lenta.ru" />
           </FormField>
           <FormField label="URL" error={errors.url?.message}>
-            <input {...register('url')} className="form-input" placeholder="https://..." />
+            <input {...register('url')} className="ds-input" placeholder="https://..." />
           </FormField>
           <div className="grid grid-cols-2 gap-3">
             <FormField label="Тип" error={errors.type?.message}>
-              <select {...register('type')} className="form-input">
+              <select {...register('type')} className="ds-input">
                 <option value="auto">auto</option>
                 <option value="rss">rss</option>
                 <option value="html">html</option>
               </select>
             </FormField>
             <FormField label="Язык" error={errors.language?.message}>
-              <input {...register('language')} className="form-input" placeholder="ru" />
+              <input {...register('language')} className="ds-input" placeholder="ru" />
             </FormField>
           </div>
-          <label className="inline-flex items-center gap-2 text-sm">
-            <input type="checkbox" {...register('enabled')} className="rounded" />
+          <label className="inline-flex items-center gap-2 text-sm text-ink-secondary">
+            <input type="checkbox" {...register('enabled')} className="h-4 w-4 accent-lime" />
             Включён
           </label>
           <div className="mt-4 flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-md px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
-            >
+            <button type="button" onClick={onClose} className="btn-ghost">
               Отмена
             </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="rounded-md bg-brand px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-dark disabled:opacity-50"
-            >
+            <button type="submit" disabled={submitting} className="btn-primary">
               {submitting ? 'Сохраняем…' : 'Сохранить'}
             </button>
           </div>
         </form>
       </div>
-      <style>{`
-        .form-input {
-          width: 100%;
-          padding: 6px 10px;
-          font-size: 14px;
-          border: 1px solid #cbd5e1;
-          border-radius: 6px;
-          background: white;
-        }
-        .form-input:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 1px #2563eb; }
-        .form-input:disabled { background: #f1f5f9; color: #64748b; }
-      `}</style>
     </div>
   );
 }
@@ -377,9 +355,9 @@ function FormField({
 }): ReactNode {
   return (
     <label className="block">
-      <span className="mb-1 block text-sm font-medium text-slate-700">{label}</span>
+      <span className="ds-label">{label}</span>
       {children}
-      {error && <span className="mt-1 block text-xs text-red-600">{error}</span>}
+      {error && <span className="mt-1 block text-xs text-danger">{error}</span>}
     </label>
   );
 }

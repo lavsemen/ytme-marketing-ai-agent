@@ -142,6 +142,16 @@ export function formatGithubApiError(err: unknown): string {
     ].join(' ');
   }
 
+  if (raw.includes('Unexpected inputs provided')) {
+    const m = raw.match(/Unexpected inputs provided: \[(.*?)\]/);
+    const fields = m?.[1] ?? '';
+    return [
+      `Workflow в ветке ${CONFIG.branch} ещё не знает про input(ы): ${fields || 'см. ошибку выше'}.`,
+      `GitHub валидирует workflow_dispatch по версии файла на ${CONFIG.branch}.`,
+      `Закоммитьте и запушьте .github/workflows/${CONFIG.workflowFile} с новыми inputs в ${CONFIG.branch}, затем повторите запуск.`,
+    ].join(' ');
+  }
+
   if (raw.includes('Not Found') && raw.toLowerCase().includes('workflow')) {
     return `Workflow "${CONFIG.workflowFile}" не найден. Запушьте .github/workflows/generate.yml в ветку ${CONFIG.branch}.`;
   }
@@ -248,14 +258,17 @@ export interface WorkflowJobSummary {
 
 export async function dispatchGenerate(
   client: Octokit,
-  inputs: { source?: string },
+  inputs: { source?: string; hint?: string },
 ): Promise<void> {
   await client.actions.createWorkflowDispatch({
     owner: CONFIG.repoOwner,
     repo: CONFIG.repoName,
     workflow_id: CONFIG.workflowFile,
     ref: CONFIG.branch,
-    inputs: { source: inputs.source ?? 'all' },
+    inputs: {
+      source: inputs.source ?? 'all',
+      ...(inputs.hint ? { hint: inputs.hint } : {}),
+    },
   });
 }
 

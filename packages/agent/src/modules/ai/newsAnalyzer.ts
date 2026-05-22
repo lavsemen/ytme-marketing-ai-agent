@@ -1,5 +1,4 @@
 import type { LlmClient } from './llmClient.js';
-import { NEWS_ANALYZER_PROMPT } from './prompts.js';
 import { extractJson } from './anthropicClient.js';
 import {
   TravelInsightArraySchema,
@@ -8,9 +7,16 @@ import {
 import type { NewsItem } from '../../types/news.js';
 import { logger } from '../../utils/logger.js';
 
+export interface AnalyzeNewsOptions {
+  systemPrompt: string;
+  temperature?: number;
+  maxTokens?: number;
+}
+
 export async function analyzeNews(
   llm: LlmClient,
   news: NewsItem[],
+  options: AnalyzeNewsOptions,
 ): Promise<TravelInsight[]> {
   if (news.length === 0) {
     throw new Error('analyzeNews: empty news list');
@@ -27,11 +33,11 @@ export async function analyzeNews(
   logger.info({ count: payload.length }, 'Analyzing news with LLM');
 
   const raw = await llm.complete({
-    system: NEWS_ANALYZER_PROMPT,
+    system: options.systemPrompt,
     user: JSON.stringify(payload, null, 2),
     jsonMode: true,
-    maxTokens: 2048,
-    temperature: 0.3,
+    maxTokens: options.maxTokens ?? 2048,
+    temperature: options.temperature ?? 0.3,
   });
 
   let parsed: unknown;

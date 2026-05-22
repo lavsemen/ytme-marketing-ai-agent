@@ -3,6 +3,24 @@ import { TravelInsightSchema } from './insight.js';
 import { LandingInfoSchema } from './landing.js';
 import { TourSchema } from './tour.js';
 
+const SettingsSnapshotSchema = z
+  .object({
+    brandName: z.string().optional(),
+    brandVoice: z.string().optional(),
+    defaultAudience: z.string().optional(),
+    model: z.string().optional(),
+    confidenceThreshold: z.number().optional(),
+  })
+  .partial();
+
+const ResultMetaSchema_ = z.object({
+  createdAt: z.string().datetime(),
+  agentVersion: z.string(),
+  runId: z.string().optional(),
+  hint: z.string().optional(),
+  settingsSnapshot: SettingsSnapshotSchema.optional(),
+});
+
 export const PipelineResultSchema = z.object({
   status: z.literal('success').default('success'),
   news: z.object({
@@ -21,11 +39,7 @@ export const PipelineResultSchema = z.object({
     imagePrompt: z.string().optional(),
   }),
   landing: LandingInfoSchema,
-  meta: z.object({
-    createdAt: z.string().datetime(),
-    agentVersion: z.string(),
-    runId: z.string().optional(),
-  }),
+  meta: ResultMetaSchema_,
 });
 
 export type PipelineResult = z.infer<typeof PipelineResultSchema>;
@@ -34,6 +48,7 @@ export const REJECTION_REASONS = [
   'no_news',
   'low_confidence',
   'unknown_country',
+  'blocked_country',
   'no_tours',
   'llm_error',
 ] as const;
@@ -55,11 +70,7 @@ export const RejectedPipelineResultSchema = z.object({
     .default([]),
   insights: z.array(TravelInsightSchema).default([]),
   topInsight: TravelInsightSchema.optional(),
-  meta: z.object({
-    createdAt: z.string().datetime(),
-    agentVersion: z.string(),
-    runId: z.string().optional(),
-  }),
+  meta: ResultMetaSchema_,
 });
 
 export type RejectedPipelineResult = z.infer<typeof RejectedPipelineResultSchema>;
