@@ -11,9 +11,10 @@
     "id": "kommersant-travel",
     "name": "Коммерсантъ — Туризм",
     "url": "https://www.kommersant.ru/RSS/section-business.xml",
-    "enabled": false,
+    "enabled": true,
     "language": "ru",
-    "type": "rss"
+    "type": "rss",
+    "updatedAt": "2026-05-22T12:53:44.026Z"
   },
   {
     "id": "atorus",
