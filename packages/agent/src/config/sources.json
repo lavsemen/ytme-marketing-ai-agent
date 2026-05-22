@@ -8,14 +8,6 @@
     "type": "rss"
   },
   {
-    "id": "rbc-tourism",
-    "name": "РБК — Туризм",
-    "url": "https://rssexport.rbc.ru/rbcnews/news/30/full.rss",
-    "enabled": true,
-    "language": "ru",
-    "type": "rss"
-  },
-  {
     "id": "kommersant-travel",
     "name": "Коммерсантъ — Туризм",
     "url": "https://www.kommersant.ru/RSS/section-business.xml",
