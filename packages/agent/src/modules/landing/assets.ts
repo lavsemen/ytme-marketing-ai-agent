@@ -1,0 +1,26 @@
+import { LANDINGS_DIR } from '../../utils/fs.js';
+import { writeFile, pathExists } from '../../utils/fs.js';
+import path from 'node:path';
+
+const PLACEHOLDER_SVG = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#g)"/>
+  <text x="600" y="320" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="72" fill="#fff" font-weight="700">YouTravel.me</text>
+  <text x="600" y="395" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="32" fill="#cbd5e1">Авторские путешествия</text>
+</svg>
+`;
+
+export async function ensurePlaceholderAsset(): Promise<string> {
+  const sharedDir = path.join(LANDINGS_DIR, '_shared');
+  const file = path.join(sharedDir, 'placeholder.svg');
+  if (!(await pathExists(file))) {
+    await writeFile(file, PLACEHOLDER_SVG);
+  }
+  return '/landings/_shared/placeholder.svg';
+}
