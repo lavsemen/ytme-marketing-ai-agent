@@ -40,5 +40,15 @@
     "type": "html",
     "createdAt": "2026-05-22T07:25:49.157Z",
     "updatedAt": "2026-05-22T07:25:49.157Z"
+  },
+  {
+    "id": "tourdom",
+    "name": "tourdom",
+    "url": "https://www.tourdom.ru/",
+    "enabled": true,
+    "language": "ru",
+    "type": "auto",
+    "createdAt": "2026-05-22T08:10:00.564Z",
+    "updatedAt": "2026-05-22T08:10:00.564Z"
   }
 ]
