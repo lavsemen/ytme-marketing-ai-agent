@@ -1,11 +1,20 @@
 [
   {
+    "slug": "etim-letom-na-kurorty-kitaya-smogut-sletat-na-50percent-bolshe-rossiyskih-2",
+    "createdAt": "2026-05-22T16:41:09.299Z",
+    "newsTitle": "Этим летом на курорты Китая смогут слетать на 50% больше российских туристов",
+    "toursCount": 8,
+    "landingUrl": "https://lavsemen.github.io/ytme-marketing-ai-agent/landings/etim-letom-na-kurorty-kitaya-smogut-sletat-na-50percent-bolshe-rossiyskih-2/",
+    "status": "success",
+    "country": "Китай"
+  },
+  {
     "slug": "etim-letom-na-kurorty-kitaya-smogut-sletat-na-50percent-bolshe-rossiyskih",
     "createdAt": "2026-05-22T12:59:28.445Z",
     "newsTitle": "Этим летом на курорты Китая смогут слетать на 50% больше российских туристов",
+    "country": "Китай",
     "toursCount": 8,
     "landingUrl": "https://lavsemen.github.io/ytme-marketing-ai-agent/landings/etim-letom-na-kurorty-kitaya-smogut-sletat-na-50percent-bolshe-rossiyskih/",
-    "status": "success",
-    "country": "Китай"
+    "status": "success"
   }
 ]
