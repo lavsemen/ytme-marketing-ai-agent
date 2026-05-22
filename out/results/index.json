@@ -1,5 +1,14 @@
 [
   {
+    "slug": "rejected-26300857737",
+    "createdAt": "2026-05-22T16:55:37.100Z",
+    "newsTitle": "Run skipped (no_news)",
+    "toursCount": 0,
+    "status": "rejected",
+    "rejectionReason": "no_news",
+    "rejectionMessage": "Не удалось получить новости из выбранных источников. Источники (belavia) не вернули ни одной новости за последние 21 дней."
+  },
+  {
     "slug": "rejected-26300754487",
     "createdAt": "2026-05-22T16:53:24.193Z",
     "newsTitle": "Run skipped (no_news)",
