@@ -42,5 +42,15 @@
     "type": "auto",
     "createdAt": "2026-05-22T08:10:00.564Z",
     "updatedAt": "2026-05-22T08:10:00.564Z"
+  },
+  {
+    "id": "turki",
+    "name": "турки",
+    "url": "https://www.turkishairlines.com/en-ru/press-room/",
+    "enabled": true,
+    "language": "ru",
+    "type": "auto",
+    "createdAt": "2026-05-22T08:16:39.844Z",
+    "updatedAt": "2026-05-22T08:16:39.844Z"
   }
 ]
