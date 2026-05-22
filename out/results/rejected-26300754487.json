@@ -1,0 +1,20 @@
+{
+  "status": "rejected",
+  "reason": "no_news",
+  "message": "Не удалось получить новости из выбранных источников. Источники (belavia) не вернули ни одной новости за последние 21 дней.",
+  "newsSampled": [],
+  "insights": [],
+  "meta": {
+    "createdAt": "2026-05-22T16:53:24.193Z",
+    "agentVersion": "0.1.0",
+    "runId": "26300754487",
+    "hint": "Фокус на перелетах, любая информация связанная с перелетом в Белорусь, туры необходимо подобрать, только по белоруси, либо в Белорусь из России",
+    "settingsSnapshot": {
+      "brandName": "YouTravel.me",
+      "brandVoice": "friendly",
+      "defaultAudience": "mixed",
+      "confidenceThreshold": 0.4
+    }
+  },
+  "sourceId": "belavia"
+}

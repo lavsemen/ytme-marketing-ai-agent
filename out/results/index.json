@@ -1,12 +1,21 @@
 [
   {
+    "slug": "rejected-26300754487",
+    "createdAt": "2026-05-22T16:53:24.193Z",
+    "newsTitle": "Run skipped (no_news)",
+    "toursCount": 0,
+    "status": "rejected",
+    "rejectionReason": "no_news",
+    "rejectionMessage": "Не удалось получить новости из выбранных источников. Источники (belavia) не вернули ни одной новости за последние 21 дней."
+  },
+  {
     "slug": "etim-letom-na-kurorty-kitaya-smogut-sletat-na-50percent-bolshe-rossiyskih-2",
     "createdAt": "2026-05-22T16:41:09.299Z",
     "newsTitle": "Этим летом на курорты Китая смогут слетать на 50% больше российских туристов",
+    "country": "Китай",
     "toursCount": 8,
     "landingUrl": "https://lavsemen.github.io/ytme-marketing-ai-agent/landings/etim-letom-na-kurorty-kitaya-smogut-sletat-na-50percent-bolshe-rossiyskih-2/",
-    "status": "success",
-    "country": "Китай"
+    "status": "success"
   },
   {
     "slug": "etim-letom-na-kurorty-kitaya-smogut-sletat-na-50percent-bolshe-rossiyskih",
