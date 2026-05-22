@@ -1,0 +1,34 @@
+[
+  {
+    "id": "lenta-travel",
+    "name": "Lenta.ru — Путешествия",
+    "url": "https://lenta.ru/rss/news/travel",
+    "enabled": true,
+    "language": "ru",
+    "type": "rss"
+  },
+  {
+    "id": "rbc-tourism",
+    "name": "РБК — Туризм",
+    "url": "https://rssexport.rbc.ru/rbcnews/news/30/full.rss",
+    "enabled": true,
+    "language": "ru",
+    "type": "rss"
+  },
+  {
+    "id": "kommersant-travel",
+    "name": "Коммерсантъ — Туризм",
+    "url": "https://www.kommersant.ru/RSS/section-business.xml",
+    "enabled": false,
+    "language": "ru",
+    "type": "rss"
+  },
+  {
+    "id": "atorus",
+    "name": "АТОР (Ассоциация туроператоров)",
+    "url": "https://www.atorus.ru/news/rss.xml",
+    "enabled": true,
+    "language": "ru",
+    "type": "rss"
+  }
+]

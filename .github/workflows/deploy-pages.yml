@@ -1,0 +1,114 @@
+name: Deploy to GitHub Pages
+
+# FIRST-TIME SETUP (required once, in GitHub UI):
+# Repo → Settings → Pages → Build and deployment → Source: "GitHub Actions"
+# Without this, "Setup Pages" fails with: Get Pages site failed (404)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/admin/**'
+      - 'landings/**'
+      - 'out/results/**'
+      - '.github/workflows/deploy-pages.yml'
+  workflow_dispatch:
+  workflow_run:
+    workflows: ['Generate landing']
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'yarn'
+
+      - name: Install deps
+        run: yarn install --frozen-lockfile
+
+      - name: Configure admin env
+        run: |
+          cat > packages/admin/.env.production <<EOF
+          VITE_REPO_OWNER=${{ github.repository_owner }}
+          VITE_REPO_NAME=${{ github.event.repository.name }}
+          VITE_GENERATE_WORKFLOW_FILE=generate.yml
+          VITE_LANDING_BASE_URL=https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+          EOF
+
+      - name: Build admin SPA
+        run: yarn workspace @ytme/admin build
+
+      - name: Assemble Pages artifact
+        run: |
+          set -e
+          rm -rf dist
+          mkdir -p dist
+          cp -r packages/admin/dist/. dist/
+          if [ -d landings ]; then
+            mkdir -p dist/landings
+            cp -r landings/. dist/landings/
+          fi
+          if [ -d out/results ]; then
+            mkdir -p dist/results
+            cp -r out/results/. dist/results/
+          else
+            mkdir -p dist/results
+            echo "[]" > dist/results/index.json
+          fi
+          # SPA fallback for client-side router (404.html points back to the SPA)
+          cp dist/index.html dist/404.html
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+        with:
+          # May auto-enable Pages for repo admins; first time still requires
+          # Settings → Pages → Source = "GitHub Actions" in the UI.
+          enablement: true
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,32 @@
+{
+  "name": "@ytme/agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pipeline + CLI: news -> insight -> tours -> marketing post -> landing files",
+  "scripts": {
+    "generate": "tsx src/cli.ts generate",
+    "list": "tsx src/cli.ts list",
+    "validate-sources": "tsx src/cli.ts validate-sources",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.30.1",
+    "@mozilla/readability": "^0.5.0",
+    "cheerio": "^1.0.0",
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.5",
+    "jsdom": "^25.0.1",
+    "pino": "^9.4.0",
+    "pino-pretty": "^11.2.2",
+    "rss-parser": "^3.13.0",
+    "slugify": "^1.6.6",
+    "undici": "^6.19.8",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/jsdom": "^21.1.7",
+    "tsx": "^4.19.1",
+    "typescript": "^5.5.4"
+  }
+}

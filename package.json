@@ -1,0 +1,29 @@
+{
+  "name": "ytme-marketing-ai-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "YouTravel.me marketing AI agent: news analysis + tour selection + landing generation + GitHub Pages deploy",
+  "license": "UNLICENSED",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "generate": "yarn workspace @ytme/agent generate",
+    "list": "yarn workspace @ytme/agent list",
+    "validate-sources": "yarn workspace @ytme/agent validate-sources",
+    "admin:dev": "yarn workspace @ytme/admin dev",
+    "admin:build": "yarn workspace @ytme/admin build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "yarn workspaces run typecheck"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.4",
+    "vitest": "^2.1.1"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "yarn@1.22.22"
+}

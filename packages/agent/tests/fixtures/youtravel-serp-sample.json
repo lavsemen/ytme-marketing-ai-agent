@@ -1,0 +1,134 @@
+{
+  "error": false,
+  "data": {
+    "total": 8804,
+    "items": [
+      {
+        "id": 46766,
+        "title": "Улетные Мальдивы по 4 островам. Включено Все и даже больше!",
+        "preview_image": "public/images/tour/media/2025/12/17/4023f6b1f26c2d4a27a04f38cb027f317b6eb12d.jpg",
+        "continents": ["Азия"],
+        "countries": ["Мальдивы"],
+        "description": "❗️Всё &nbsp;лучшее на Мальдивах в этом туре❗️",
+        "regions": [],
+        "locations": ["Мале"],
+        "types": [
+          { "main": false, "title": "Фитнес тур" },
+          { "main": true, "title": "Экскурсионный" }
+        ],
+        "expert": {
+          "id": 130113,
+          "rating": 4.9866,
+          "count_reviews": 372,
+          "name": "Зоя С",
+          "link": "/expert/130113/zoya"
+        },
+        "dates": {
+          "total": 18,
+          "group_min_price": {
+            "id": 3395732,
+            "date_from": 1779494400,
+            "date_to": 1780099200,
+            "free_spaces": 2,
+            "group_size": 15,
+            "actual_price": 145000,
+            "price": 145000
+          },
+          "slice": [
+            {
+              "id": 3395732,
+              "date_from": 1779494400,
+              "date_to": 1780099200,
+              "free_spaces": 2,
+              "group_size": 15,
+              "actual_price": 145000,
+              "price": 145000
+            },
+            {
+              "id": 3395731,
+              "date_from": 1781308800,
+              "date_to": 1781913600,
+              "free_spaces": 1,
+              "group_size": 15,
+              "actual_price": 145000,
+              "price": 145000
+            }
+          ]
+        },
+        "languages": ["Русский", "Английский"],
+        "link": "/tours/46766/uletnye_maldivy_po_4_ostrovam",
+        "activity": 2,
+        "comfort": 4
+      },
+      {
+        "id": 72921,
+        "title": "П-ров Рыбачий и киты с проживанием на берегу океана в Териберке",
+        "preview_image": "public/images/tour/media/2026/05/08/08002fb6bdb332f8daf6622deec6818e65e1ea61.jpg",
+        "continents": [],
+        "countries": ["Россия"],
+        "description": "Киты и п-ров Рыбачий — три дня в краю поморов с комфортным проживанием",
+        "regions": ["Мурманск"],
+        "locations": [],
+        "types": [{ "main": true, "title": "Экскурсионный" }],
+        "expert": {
+          "id": 61200,
+          "rating": 4.7813,
+          "count_reviews": 32,
+          "name": "Анастасия Б"
+        },
+        "dates": {
+          "total": 1,
+          "group_min_price": {
+            "id": 4550380,
+            "date_from": 1783728000,
+            "date_to": 1783900800,
+            "free_spaces": 2,
+            "group_size": 8,
+            "actual_price": 59700,
+            "price": 59700
+          },
+          "slice": [
+            {
+              "id": 4550380,
+              "date_from": 1783728000,
+              "date_to": 1783900800,
+              "free_spaces": 2,
+              "group_size": 8,
+              "actual_price": 59700,
+              "price": 59700
+            }
+          ]
+        },
+        "languages": ["Русский"],
+        "link": "/tours/72921/p-rov_rybachiy_i_kity",
+        "activity": 1,
+        "comfort": 3
+      },
+      {
+        "id": 22856,
+        "title": "От Алтая до Монголии и обратно",
+        "preview_image": "upload/tours/22856/media/ccc/8na2masfgq3cyr75kp9dj90bz16dq7is.jpeg",
+        "continents": [],
+        "countries": ["Россия", "Монголия"],
+        "description": "Тур От Алтая до Монголии и обратно представляет собой большое приключение.",
+        "regions": ["Алтай"],
+        "locations": [],
+        "types": [{ "main": true, "title": "Приключенческий" }],
+        "expert": {
+          "rating": 4.5,
+          "count_reviews": 18,
+          "name": "Иван П"
+        },
+        "dates": {
+          "total": 1,
+          "group_min_price": null,
+          "slice": []
+        },
+        "languages": ["Русский"],
+        "link": "/tours/22856/ot_altaya_do_mongolii",
+        "activity": 4,
+        "comfort": 2
+      }
+    ]
+  }
+}
