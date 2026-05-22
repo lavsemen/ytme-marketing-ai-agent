@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { logger } from './utils/logger.js';
 import { runPipeline, loadSources } from './pipeline.js';
 import { listResults } from './modules/deploy/manifest.js';
+import { isRejected } from './types/result.js';
 
 const program = new Command();
 program
@@ -20,11 +21,35 @@ program
         ...(opts.source ? { sourceId: opts.source as string } : {}),
         ...(opts.runId ? { runId: opts.runId as string } : {}),
       });
+
+      if (isRejected(result)) {
+        logger.warn(
+          { reason: result.reason, message: result.message },
+          'Generation rejected (saved as skipped run)',
+        );
+        process.stdout.write(
+          JSON.stringify({
+            ok: false,
+            status: 'rejected',
+            reason: result.reason,
+            message: result.message,
+          }) + '\n',
+        );
+        return;
+      }
+
       logger.info(
         { slug: result.landing.slug, url: result.landing.url },
         'Generation complete',
       );
-      process.stdout.write(JSON.stringify({ ok: true, slug: result.landing.slug, url: result.landing.url }) + '\n');
+      process.stdout.write(
+        JSON.stringify({
+          ok: true,
+          status: 'success',
+          slug: result.landing.slug,
+          url: result.landing.url,
+        }) + '\n',
+      );
     } catch (err) {
       logger.error({ err }, 'Pipeline failed');
       process.exit(1);

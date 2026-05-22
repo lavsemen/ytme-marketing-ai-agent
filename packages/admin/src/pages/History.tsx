@@ -1,9 +1,34 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { ExternalLink } from 'lucide-react';
-import { fetchResultsIndex } from '../api/results';
+import {
+  fetchResultsIndex,
+  REJECTION_REASON_LABELS,
+  type ResultMeta,
+} from '../api/results';
 import { useAuth } from '../hooks/useAuth';
 import type { ReactNode } from 'react';
+
+function StatusBadge({ entry }: { entry: ResultMeta }): ReactNode {
+  if (entry.status === 'rejected') {
+    const label = entry.rejectionReason
+      ? REJECTION_REASON_LABELS[entry.rejectionReason]
+      : 'Пропущен';
+    return (
+      <span
+        title={entry.rejectionMessage ?? label}
+        className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800"
+      >
+        Пропущен · {label}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
+      Готово
+    </span>
+  );
+}
 
 export function HistoryPage(): ReactNode {
   const { pat } = useAuth();
@@ -32,6 +57,7 @@ export function HistoryPage(): ReactNode {
           <thead className="bg-slate-50 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
             <tr>
               <th className="px-4 py-2">Дата</th>
+              <th className="px-4 py-2">Статус</th>
               <th className="px-4 py-2">Новость</th>
               <th className="px-4 py-2">Страна</th>
               <th className="px-4 py-2">Туров</th>
@@ -41,39 +67,51 @@ export function HistoryPage(): ReactNode {
           <tbody className="divide-y divide-slate-100">
             {results.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
                   Пока ничего не сгенерировано. Запустите первый pipeline.
                 </td>
               </tr>
             )}
-            {results.map((r) => (
-              <tr key={r.slug} className="hover:bg-slate-50">
-                <td className="px-4 py-2 text-slate-500">
-                  {new Date(r.createdAt).toLocaleString('ru-RU')}
-                </td>
-                <td className="px-4 py-2">
-                  <Link
-                    to={`/results/${r.slug}`}
-                    className="font-medium text-slate-800 hover:text-brand"
-                  >
-                    {r.newsTitle}
-                  </Link>
-                  <div className="text-xs text-slate-400">{r.slug}</div>
-                </td>
-                <td className="px-4 py-2 text-slate-600">{r.country ?? '—'}</td>
-                <td className="px-4 py-2 text-slate-600">{r.toursCount}</td>
-                <td className="px-4 py-2 text-right">
-                  <a
-                    href={r.landingUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-sm text-brand hover:underline"
-                  >
-                    Лендинг <ExternalLink size={12} />
-                  </a>
-                </td>
-              </tr>
-            ))}
+            {results.map((r) => {
+              const isRejected = r.status === 'rejected';
+              return (
+                <tr key={r.slug} className="hover:bg-slate-50">
+                  <td className="px-4 py-2 text-slate-500">
+                    {new Date(r.createdAt).toLocaleString('ru-RU')}
+                  </td>
+                  <td className="px-4 py-2">
+                    <StatusBadge entry={r} />
+                  </td>
+                  <td className="px-4 py-2">
+                    <Link
+                      to={`/results/${r.slug}`}
+                      className="font-medium text-slate-800 hover:text-brand"
+                    >
+                      {r.newsTitle}
+                    </Link>
+                    <div className="text-xs text-slate-400">{r.slug}</div>
+                  </td>
+                  <td className="px-4 py-2 text-slate-600">{r.country ?? '—'}</td>
+                  <td className="px-4 py-2 text-slate-600">{isRejected ? '—' : r.toursCount}</td>
+                  <td className="px-4 py-2 text-right">
+                    {isRejected ? (
+                      <span className="text-xs text-slate-400">Нет лендинга</span>
+                    ) : r.landingUrl ? (
+                      <a
+                        href={r.landingUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-sm text-brand hover:underline"
+                      >
+                        Лендинг <ExternalLink size={12} />
+                      </a>
+                    ) : (
+                      <span className="text-xs text-slate-400">—</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

@@ -1,30 +1,46 @@
 import { CONFIG } from '../lib/config';
 import { createGithubClient, getFileContent } from './github';
 
+export type ResultStatus = 'success' | 'rejected';
+
+export type RejectionReason =
+  | 'no_news'
+  | 'low_confidence'
+  | 'unknown_country'
+  | 'no_tours'
+  | 'llm_error';
+
 export interface ResultMeta {
   slug: string;
   createdAt: string;
   newsTitle: string;
   country?: string;
   toursCount: number;
-  landingUrl: string;
+  landingUrl?: string;
+  status?: ResultStatus;
+  rejectionReason?: RejectionReason;
+  rejectionMessage?: string;
+}
+
+export interface InsightJson {
+  title: string;
+  country: string;
+  region?: string;
+  city?: string;
+  travelAngle: string;
+  seasonality?: string;
+  targetAudience?: string;
+  confidenceScore: number;
+  shortSummary: string;
+  sourceUrl: string;
+  sourceName: string;
+  reasonWhyRelevant?: string;
 }
 
 export interface PipelineResultJson {
+  status?: 'success';
   news: { title: string; sourceName: string; sourceUrl: string; summary: string };
-  insight: {
-    title: string;
-    country: string;
-    region?: string;
-    city?: string;
-    travelAngle: string;
-    seasonality?: string;
-    targetAudience?: string;
-    confidenceScore: number;
-    shortSummary: string;
-    sourceUrl: string;
-    sourceName: string;
-  };
+  insight: InsightJson;
   tours: {
     id: string;
     title: string;
@@ -46,6 +62,35 @@ export interface PipelineResultJson {
   meta: { createdAt: string; agentVersion: string; runId?: string };
 }
 
+export interface RejectedResultJson {
+  status: 'rejected';
+  reason: RejectionReason;
+  message: string;
+  sourceId?: string;
+  newsSampled: { title: string; url: string; sourceName: string }[];
+  insights: InsightJson[];
+  topInsight?: InsightJson;
+  meta: { createdAt: string; agentVersion: string; runId?: string };
+}
+
+export type ResultJson = PipelineResultJson | RejectedResultJson;
+
+export function isRejectedResult(r: ResultJson): r is RejectedResultJson {
+  return r.status === 'rejected';
+}
+
+export function isSuccessResult(r: ResultJson): r is PipelineResultJson {
+  return r.status !== 'rejected';
+}
+
+export const REJECTION_REASON_LABELS: Record<RejectionReason, string> = {
+  no_news: 'Нет новостей',
+  low_confidence: 'Низкая релевантность',
+  unknown_country: 'Не определена страна',
+  no_tours: 'Мало туров',
+  llm_error: 'Ошибка LLM',
+};
+
 /** Public landing URL from slug (ignores stale landingUrl saved in index.json). */
 export function publicLandingUrl(slug: string, fallback?: string): string {
   if (CONFIG.landingBaseUrl) {
@@ -55,8 +100,13 @@ export function publicLandingUrl(slug: string, fallback?: string): string {
 }
 
 function normalizeMeta(entry: ResultMeta): ResultMeta {
+  const status: ResultStatus = entry.status ?? 'success';
+  if (status === 'rejected') {
+    return { ...entry, status };
+  }
   return {
     ...entry,
+    status,
     landingUrl: publicLandingUrl(entry.slug, entry.landingUrl),
   };
 }
@@ -83,13 +133,13 @@ export async function fetchResultsIndexFromRepo(token: string): Promise<ResultMe
 export async function fetchResultFromRepo(
   token: string,
   slug: string,
-): Promise<PipelineResultJson | null> {
+): Promise<ResultJson | null> {
   const client = createGithubClient(token);
   const file = await getFileContent(client, `out/results/${encodeURIComponent(slug)}.json`);
   if (!file) return null;
   try {
-    const data = JSON.parse(file.content) as PipelineResultJson;
-    if (data.landing?.slug) {
+    const data = JSON.parse(file.content) as ResultJson;
+    if (isSuccessResult(data) && data.landing?.slug) {
       data.landing.url = publicLandingUrl(data.landing.slug, data.landing.url);
       data.post.landingUrl = data.landing.url;
     }
@@ -114,15 +164,15 @@ export async function fetchResultsIndexFromPages(): Promise<ResultMeta[]> {
   }
 }
 
-export async function fetchResultFromPages(slug: string): Promise<PipelineResultJson | null> {
+export async function fetchResultFromPages(slug: string): Promise<ResultJson | null> {
   const base = CONFIG.landingBaseUrl || '';
   if (!base) return null;
   const url = cacheBust(`${base}/results/${encodeURIComponent(slug)}.json`);
   try {
     const res = await fetch(url, { cache: 'no-store' });
     if (!res.ok) return null;
-    const data = (await res.json()) as PipelineResultJson;
-    if (data.landing?.slug) {
+    const data = (await res.json()) as ResultJson;
+    if (isSuccessResult(data) && data.landing?.slug) {
       data.landing.url = publicLandingUrl(data.landing.slug, data.landing.url);
       data.post.landingUrl = data.landing.url;
     }
@@ -144,7 +194,7 @@ export async function fetchResultsIndex(token: string | null): Promise<ResultMet
 export async function fetchResult(
   token: string | null,
   slug: string,
-): Promise<PipelineResultJson | null> {
+): Promise<ResultJson | null> {
   if (token) {
     const fromRepo = await fetchResultFromRepo(token, slug);
     if (fromRepo) return fromRepo;

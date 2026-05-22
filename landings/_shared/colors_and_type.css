@@ -1,0 +1,129 @@
+/* ───────────────────────────────────────────────────────────────
+   YouTravel.me — Colors & Type Tokens (system fonts)
+   Foundation tokens for all generated landings.
+   Generated from the official YouTravel.me brand kit (China Landing).
+   ─────────────────────────────────────────────────────────────── */
+
+:root {
+  /* ────── Brand color ────── */
+  --yt-purple-50:  #F4ECFA;
+  --yt-purple-100: #E4CCF3;
+  --yt-purple-300: #B772D4;
+  --yt-purple-500: #8600EF;
+  --yt-purple-600: #771F96;
+  --yt-purple-700: #5D16B9;
+  --yt-purple-800: #4A0E92;
+  --yt-purple-grad-from: #7D20B8;
+  --yt-purple-grad-to:   #5D16B9;
+
+  /* ────── Citron ────── */
+  --yt-citron-50:  #F2F7E5;
+  --yt-citron-100: #E8F1CC;
+  --yt-citron-200: #D9E8A4;
+  --yt-citron-300: #C6D97A;
+  --yt-citron-400: #B2C850;
+  --yt-citron-500: #ABC232;
+  --yt-citron-600: #9DB319;
+  --yt-citron-700: #7FA40C;
+  --yt-citron-800: #647300;
+  --yt-citron-mark: #B0CB1F;
+
+  /* ────── Neutrals ────── */
+  --yt-ink:        #121212;
+  --yt-ink-2:      #222222;
+  --yt-fg-1:       #242A37;
+  --yt-fg-2:       #727281;
+  --yt-fg-3:       #828296;
+  --yt-fg-4:       #9999A9;
+  --yt-fg-5:       #B6B6BF;
+  --yt-bd-strong:  #D7DBE2;
+  --yt-bd:         #DBDFE9;
+  --yt-bd-soft:    #E2E6EC;
+  --yt-bg-soft:    #EBEEF4;
+  --yt-bg-1:       #F0F2F5;
+  --yt-bg-2:       #F6F7FA;
+  --yt-surface:    #FFFFFF;
+
+  /* ────── Semantic ────── */
+  --yt-danger:     #F84565;
+  --yt-danger-bg:  #FEE7EC;
+  --yt-success:    #ABC232;
+  --yt-success-bg: #F2F7E5;
+  --yt-warning:    #DE8706;
+  --yt-warning-bg: #FFF4E0;
+  --yt-info:       #8600EF;
+  --yt-info-bg:    #F4ECFA;
+
+  /* ────── Shadows ────── */
+  --yt-shadow-card:    1px 3px 60px 0 rgba(153,153,169,0.35);
+  --yt-shadow-pop:     1px 2px 45px 0 rgba(153,153,169,0.22);
+  --yt-shadow-press:   0 2px 8px 0 rgba(153,153,169,0.30);
+  --yt-shadow-purple:  0 17px 47px 0 rgba(123,32,185,0.28);
+  --yt-shadow-input:   0 0 0 3px rgba(134,0,239,0.15);
+
+  /* ────── Radii ────── */
+  --yt-r-xs: 4px;
+  --yt-r-sm: 6px;
+  --yt-r-md: 8px;
+  --yt-r-lg: 12px;
+  --yt-r-xl: 16px;
+  --yt-r-2xl: 24px;
+  --yt-r-pill: 999px;
+
+  /* ────── Spacing (4-pt) ────── */
+  --yt-s-1: 4px;
+  --yt-s-2: 8px;
+  --yt-s-3: 12px;
+  --yt-s-4: 16px;
+  --yt-s-5: 20px;
+  --yt-s-6: 24px;
+  --yt-s-8: 32px;
+  --yt-s-10: 40px;
+  --yt-s-12: 48px;
+  --yt-s-16: 64px;
+
+  /* ────── Type families (system stack — SF Pro on Apple) ────── */
+  --yt-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+  --yt-text:    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  --yt-mono:    ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* ────── Semantic type ────── */
+  --yt-h1-size: 48px; --yt-h1-lh: 56px; --yt-h1-tracking: 0.010em; --yt-h1-weight: 700;
+  --yt-h2-size: 24px; --yt-h2-lh: 28px; --yt-h2-tracking:-0.010em; --yt-h2-weight: 700;
+  --yt-h3-size: 20px; --yt-h3-lh: 24px; --yt-h3-tracking:-0.010em; --yt-h3-weight: 600;
+  --yt-h4-size: 18px; --yt-h4-lh: 22px; --yt-h4-tracking: 0;       --yt-h4-weight: 600;
+  --yt-h5-size: 15px; --yt-h5-lh: 18px; --yt-h5-tracking: 0;       --yt-h5-weight: 700;
+
+  --yt-body-l-size: 15px; --yt-body-l-lh: 22px; --yt-body-tracking: -0.016em;
+  --yt-body-m-size: 14px; --yt-body-m-lh: 18px;
+  --yt-body-s-size: 13px; --yt-body-s-lh: 17px;
+  --yt-body-xs-size:12px; --yt-body-xs-lh:16px;
+  --yt-body-xxs-size:11px;--yt-body-xxs-lh: 14px;
+  --yt-caps-size: 11px; --yt-caps-lh: 12px; --yt-caps-tracking: 0.030em;
+}
+
+/* ───── Element styles ───── */
+.yt-h1, h1.yt { font-family: var(--yt-display); font-weight: var(--yt-h1-weight); font-size: var(--yt-h1-size); line-height: var(--yt-h1-lh); letter-spacing: var(--yt-h1-tracking); color: var(--yt-fg-1); }
+.yt-h2, h2.yt { font-family: var(--yt-display); font-weight: var(--yt-h2-weight); font-size: var(--yt-h2-size); line-height: var(--yt-h2-lh); letter-spacing: var(--yt-h2-tracking); color: var(--yt-fg-1); }
+.yt-h3, h3.yt { font-family: var(--yt-display); font-weight: var(--yt-h3-weight); font-size: var(--yt-h3-size); line-height: var(--yt-h3-lh); letter-spacing: var(--yt-h3-tracking); color: var(--yt-fg-1); }
+.yt-h4, h4.yt { font-family: var(--yt-display); font-weight: var(--yt-h4-weight); font-size: var(--yt-h4-size); line-height: var(--yt-h4-lh); color: var(--yt-fg-1); }
+.yt-h5, h5.yt { font-family: var(--yt-display); font-weight: var(--yt-h5-weight); font-size: var(--yt-h5-size); line-height: var(--yt-h5-lh); color: var(--yt-fg-1); }
+
+.yt-body-l   { font-family: var(--yt-text); font-size: 15px; line-height: 22px; letter-spacing: -0.016em; color: var(--yt-fg-1); }
+.yt-body-m   { font-family: var(--yt-text); font-size: 14px; line-height: 18px; letter-spacing: -0.016em; color: var(--yt-fg-1); }
+.yt-body-s   { font-family: var(--yt-text); font-size: 13px; line-height: 17px; letter-spacing: -0.016em; color: var(--yt-fg-1); }
+.yt-body-xs  { font-family: var(--yt-text); font-size: 12px; line-height: 16px; letter-spacing: -0.016em; color: var(--yt-fg-1); }
+.yt-body-xxs { font-family: var(--yt-text); font-size: 11px; line-height: 14px; letter-spacing: -0.006em; color: var(--yt-fg-1); }
+
+.yt-caps     { font-family: var(--yt-text); font-weight: 700; font-size: 11px; line-height: 12px; letter-spacing: 0.030em; text-transform: uppercase; color: var(--yt-fg-3); }
+
+.yt-semibold { font-weight: 600; }
+.yt-bold     { font-weight: 700; }
+
+.yt-root, body.yt {
+  font-family: var(--yt-text);
+  color: var(--yt-fg-1);
+  background: var(--yt-bg-1);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

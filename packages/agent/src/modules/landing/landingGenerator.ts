@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { LANDINGS_DIR, REPO_ROOT, writeFile, pathExists } from '../../utils/fs.js';
+import { LANDINGS_DIR, REPO_ROOT, writeFile, pathExists, ensureDir } from '../../utils/fs.js';
 import { generateSlug, uniqueSlug } from './slug.js';
 import {
   buildIndexHtml,
@@ -8,11 +8,13 @@ import {
   type LandingTemplateContext,
 } from './templates.js';
 import { ensurePlaceholderAsset } from './assets.js';
+import { ensureSharedAssets } from './shared.js';
 import type { LandingInfo } from '../../types/landing.js';
 import type { Tour } from '../../types/tour.js';
 import type { TravelInsight } from '../../types/insight.js';
 import type { MarketingPost } from '../../types/post.js';
 import type { NewsItem } from '../../types/news.js';
+import type { LandingContent } from '../../types/landingContent.js';
 import { logger } from '../../utils/logger.js';
 import { promises as fs } from 'node:fs';
 
@@ -21,6 +23,7 @@ export interface GenerateLandingInput {
   post: MarketingPost;
   news: NewsItem;
   tours: Tour[];
+  content: LandingContent;
   baseUrl: string;
 }
 
@@ -46,6 +49,8 @@ function pickHeroImage(input: GenerateLandingInput): string | undefined {
 export async function generateLanding(
   input: GenerateLandingInput,
 ): Promise<LandingInfo> {
+  await ensureDir(LANDINGS_DIR);
+  await ensureSharedAssets();
   await ensurePlaceholderAsset();
 
   const baseSlug = generateSlug(input.insight.title, { maxLength: 80 });
@@ -62,6 +67,7 @@ export async function generateLanding(
     insight: input.insight,
     news: input.news,
     tours: input.tours,
+    content: input.content,
     ...(pickHeroImage(input) ? { heroImageUrl: pickHeroImage(input)! } : {}),
   };
 

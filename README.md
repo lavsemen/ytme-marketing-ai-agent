@@ -242,11 +242,9 @@ TOUR_CLIENT_MODE=mock yarn generate
 | `Invalid environment variables` / `ANTHROPIC_API_KEY` в CI | Локально: `.env`. В Actions: `Settings → Secrets → Actions` → secret `ANTHROPIC_API_KEY` |
 | `401 authentication_error` / Invalid credentials | В `.env` и GitHub Secret — **ваш** ключ Anthropic, не копия из `.env.example`; создайте новый в Console |
 | `seasonality` Expected string, received null | Обновите код на `main` (схема принимает null от LLM). Не связано с env |
-| `confidenceScore < 0.4` | Новости слабо подходят под travel (напр. Эбола) — запустите `--source all` или другой источник |
+| Запуск помечен «Пропущен» в Истории | Это не ошибка: пайплайн отказался публиковать слабый пост. Откройте детали — внутри причина (`low_confidence`, `unknown_country`, `no_tours`, `no_news`, `llm_error`) и подсказки. Workflow завершается успешно (exit 0). |
 | `Source with id "X" not found` | Проверьте `packages/agent/src/config/sources.json` |
-| `Pipeline: no news fetched` | Источник не отвечает или RSS пустой — посмотрите `LOG_LEVEL=debug` |
 | `HTTP 404` для `atorus` | Старый URL `.../new.html` снят с сайта; в `sources.json` должен быть `https://www.atorus.ru/news/rss.xml`, тип `rss` |
-| `confidenceScore < 0.4` | LLM считает, что ни одна новость не подходит — добавьте более релевантный источник |
 | Admin не показывает историю | Pages-артефакт ещё кэшируется — обновите страницу через минуту |
 | Workflow «Workflow does not have write permissions» | Включите `Settings → Actions → General → Workflow permissions = Read and write` |
 | `Get Pages site failed` / `configure-pages` 404 | `Settings → Pages → Source = GitHub Actions`, затем перезапустите workflow |

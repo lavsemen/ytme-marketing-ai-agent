@@ -121,11 +121,12 @@ export function RunStatusPage(): ReactNode {
 
       {completed && success && (
         <div className="rounded-md bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-          Готово! Артефакт деплоится во второй workflow. Через минуту проверьте{' '}
+          Workflow завершился. Через минуту проверьте{' '}
           <Link to="/history" className="font-medium underline">
             историю
           </Link>{' '}
-          — новый результат появится наверху.
+          — наверху появится новый результат (статус «Готово») либо запись «Пропущен»,
+          если инфоповод не прошёл порог релевантности.
         </div>
       )}
       {completed && !success && (

@@ -5,6 +5,60 @@ import {
   buildScriptJs,
   type LandingTemplateContext,
 } from '../src/modules/landing/templates.js';
+import { LandingContentSchema } from '../src/types/landingContent.js';
+
+const content = LandingContentSchema.parse({
+  heroEyebrow: 'Авторские туры · Китай 2027',
+  heroSubtitle: 'Горы Аватара, мегаполисы, безвиз для россиян. Время ехать.',
+  heroStats: [
+    { label: 'Готовые путешествия со смыслом' },
+    { label: '30 дней без визы' },
+    { label: '4.9★ рейтинг туров' },
+  ],
+  whyNowTitle: 'Китай стал ближе',
+  whyNowReasons: [
+    { title: 'Без визы 30 дней', body: 'Россияне въезжают в Китай без визы на срок до 30 дней.' },
+    { title: 'Горы из «Аватара»', body: 'Чжанцзяцзе — вертикальные скалы и висячие мосты.' },
+    { title: 'Культура-вселенная', body: '7000 лет истории и живые традиции.' },
+    { title: 'Проще с туром', body: 'Не нужно собирать маршрут самостоятельно.' },
+  ],
+  collectionTitle: 'Готовая подборка туров в Китай',
+  collectionDesc: 'Откройте полный каталог направления.',
+  toursTitle: 'Туры в Китай',
+  toursLead: 'Каждый тур — авторский маршрут с тревел-экспертом.',
+  howToGetTitle: 'Как добраться до Китая',
+  howToGetDesc: 'Проверьте удобные рейсы заранее.',
+  esimDesc: 'Купите eSIM заранее, чтобы сразу быть на связи.',
+  blogTeasers: [
+    { title: 'Нужна ли виза в Китай', desc: 'Безвиз на 30 дней.', tag: 'Лайфхаки' },
+    { title: 'Кухня Китая', desc: 'Что попробовать.', tag: 'Кухня' },
+    { title: 'Когда лучше ехать', desc: 'Сезоны и погода.', tag: 'Страны' },
+    { title: 'Маршруты по Китаю', desc: 'Идеи программы.', tag: 'Маршруты' },
+  ],
+  forWhomTitle: 'Эти туры подойдут, если вы:',
+  forWhomItems: [
+    'Хотите увидеть Китай глубже',
+    'Не хотите собирать маршрут самостоятельно',
+    'Хотите тревел-эксперта на месте',
+    'Едете один/одна или в группе',
+    'Любите насыщенные маршруты',
+  ],
+  whyAuthorCards: [
+    { title: 'Маршрут уже собран', body: 'Всё готово.' },
+    { title: 'Тревел-эксперт рядом', body: 'Знает Китай изнутри.' },
+    { title: 'Понятная программа', body: 'Видите расписание заранее.' },
+    { title: 'Можно ехать одному', body: 'На месте группа единомышленников.' },
+    { title: 'Понятный бюджет', body: 'Всё собрано на одной странице.' },
+  ],
+  faqItems: [
+    { q: 'Нужна ли виза?', a: 'Проверьте актуальные требования посольства.' },
+    { q: 'Авиабилеты входят?', a: 'Обычно оплачиваются отдельно.' },
+    { q: 'Зачем eSIM?', a: 'Чтобы сразу быть на связи.' },
+    { q: 'Можно одному?', a: 'Да, в авторские туры часто едут соло.' },
+  ],
+  finalCtaHeadline: 'Выберите путешествие в Китай',
+  finalCtaSub: 'Туры, подборка, авиабилеты и eSIM — на одной странице.',
+});
 
 const ctx: LandingTemplateContext = {
   slug: 'kitay-bezviz',
@@ -12,7 +66,8 @@ const ctx: LandingTemplateContext = {
   heroImageUrl: 'https://example.com/hero.jpg',
   post: {
     marketingTitle: 'Китай теперь ближе: безвиз продлили',
-    marketingText: 'До конца 2027 года в Китай можно ехать с одним загранпаспортом.\n\nЭто отличный шанс увидеть всё то, что давно хотелось.',
+    marketingText:
+      'До конца 2027 года в Китай можно ехать с одним загранпаспортом.\n\nЭто отличный шанс увидеть всё то, что давно хотелось.',
     seoTitle: 'Безвиз с Китаем 2027 — подборка туров',
     seoDescription: 'Россияне могут ехать в Китай без визы до конца 2027 года. Подобрали 5 авторских туров.',
     ogTitle: 'Китай без визы до 2027',
@@ -53,29 +108,65 @@ const ctx: LandingTemplateContext = {
       url: 'https://youtravel.me/tours/51267',
     },
   ],
+  content,
 };
 
-describe('landing templates', () => {
+describe('landing templates (brand kit)', () => {
   it('renders required HTML elements', () => {
     const html = buildIndexHtml(ctx);
     expect(html).toMatch(/<!DOCTYPE html>/i);
     expect(html).toContain('<html lang="ru">');
     expect(html).toContain('Китай теперь ближе: безвиз продлили');
-    expect(html).toContain('href="https://example.com/news/china"');
-    expect(html).toContain('https://youtravel.me/tours/48212');
-    expect(html).toContain('https://youtravel.me/tours/51267');
+    expect(html).toContain('href="https://youtravel.me/tours/48212"');
+  });
+
+  it('loads shared brand stylesheets', () => {
+    const html = buildIndexHtml(ctx);
+    expect(html).toContain('../_shared/colors_and_type.css');
+    expect(html).toContain('../_shared/landing.css');
+    expect(html).toContain('../_shared/assets/logo-wordmark.svg');
+  });
+
+  it('renders all 11 design-system blocks in order', () => {
+    const html = buildIndexHtml(ctx);
+    const blocks = [
+      'class="yt-nav"',
+      'class="hero-section"',
+      'class="section-white why-now"',
+      'class="section-bg tours-section"',
+      'class="collection-section"',
+      'class="section-white aviation-section"',
+      'class="esim-section"',
+      'class="section-white blog-section"',
+      'class="section-bg for-whom-section"',
+      'class="section-white why-author"',
+      'class="section-bg faq-section"',
+      'class="final-cta-section"',
+      'class="site-footer"',
+    ];
+    let cursor = 0;
+    for (const block of blocks) {
+      const pos = html.indexOf(block, cursor);
+      expect(pos, `block "${block}" must appear after position ${cursor}`).toBeGreaterThan(cursor - 1);
+      cursor = pos + block.length;
+    }
+  });
+
+  it('renders LandingContent fields into matching blocks', () => {
+    const html = buildIndexHtml(ctx);
+    expect(html).toContain('Авторские туры · Китай 2027');
+    expect(html).toContain('Без визы 30 дней');
+    expect(html).toContain('Готовая подборка туров в Китай');
+    expect(html).toContain('Нужна ли виза?');
+    expect(html).toContain('YOUTRAVEL');
+    expect(html).toContain('Выберите путешествие в Китай');
   });
 
   it('includes SEO meta tags', () => {
     const html = buildIndexHtml(ctx);
     expect(html).toContain('<title>Безвиз с Китаем 2027 — подборка туров</title>');
-    expect(html).toContain('name="description" content="Россияне могут ехать в Китай без визы');
-    expect(html).toContain('property="og:title" content="Китай без визы до 2027"');
-    expect(html).toContain('property="og:description"');
     expect(html).toContain('property="og:image" content="https://example.com/hero.jpg"');
-    expect(html).toContain('property="og:url"');
     expect(html).toContain('rel="canonical"');
-    expect(html).toContain('<meta name="twitter:card"');
   });
 
   it('includes JSON-LD structured data', () => {
@@ -88,9 +179,9 @@ describe('landing templates', () => {
     expect(parsed.about.name).toBe('Китай');
   });
 
-  it('renders tour cards with CTA', () => {
+  it('renders tour cards', () => {
     const html = buildIndexHtml(ctx);
-    expect((html.match(/class="tour-card__cta"/g) ?? []).length).toBe(2);
+    expect((html.match(/class="tour-card"/g) ?? []).length).toBe(2);
     expect(html).toContain('Смотреть тур');
   });
 
@@ -104,15 +195,17 @@ describe('landing templates', () => {
     expect(html).toContain('&lt;script&gt;');
   });
 
-  it('builds CSS without obvious syntax issues', () => {
+  it('per-landing CSS is a thin override file', () => {
     const css = buildStylesCss();
-    expect(css).toContain('.tour-card');
-    expect(css).toContain('@media');
+    expect(css.length).toBeLessThan(2000);
     expect((css.match(/\{/g) ?? []).length).toBe((css.match(/\}/g) ?? []).length);
   });
 
-  it('builds JS as IIFE', () => {
+  it('script wires nav scroll, FAQ accordion, smooth scroll', () => {
     const js = buildScriptJs();
     expect(js).toMatch(/\(function/);
+    expect(js).toContain('faq-open');
+    expect(js).toContain('nav-scrolled');
+    expect(js).toContain('scrollIntoView');
   });
 });

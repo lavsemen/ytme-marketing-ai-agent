@@ -63,6 +63,83 @@ export const POST_GENERATOR_PROMPT = `${SYSTEM_GUARDRAILS}
   "imagePrompt": string?              // короткий промпт для генерации обложки (1 предложение)
 }`;
 
+export const LANDING_CONTENT_PROMPT = `${SYSTEM_GUARDRAILS}
+
+Задача: подготовить блочный контент для лендинг-страницы YouTravel.me по выбранному инфоповоду.
+Структура страницы жёстко зафиксирована (Nav → Hero → WhyNow → TourCards → Collection → HowToGet → ESIM → Blog → ForWhom → WhyAuthor → FAQ → FinalCTA → Footer).
+Тебе нужно вернуть тексты для блоков. Туры уже подобраны — отдельно их не перечисляй.
+
+Вход:
+{
+  "insight": TravelInsight,
+  "post": MarketingPost,        // marketingTitle / marketingText уже сгенерированы
+  "tours": [{ "id","title","url","duration"?,"price"?,"country"? }],
+  "country": string,
+  "travelAngle": string
+}
+
+Тон: уверенный, маркетинговый, без кликбейта, без капса, без «горящих». На русском.
+Жёсткие правила:
+- Никаких выдуманных цен/процентов/дат/визовых правил, которых нет в insight/post/tours.
+- Для FAQ опирайся на общеизвестное (виза/связь/перелёт/eSIM/выбор тура) без специфических цифр.
+- Для blogTeasers генерируй ТОЛЬКО заголовки и описания (поле url оставляй пустым — мы подставим).
+- heroStats — короткие фразы 2–4 слова, не больше 30 символов.
+- Все строки на русском, без markdown, без HTML.
+
+Выход: ТОЛЬКО валидный JSON следующей структуры:
+{
+  "heroEyebrow": string,                              // напр. "Авторские туры · Китай 2026"
+  "heroSubtitle": string,                             // 1–2 предложения, hero-подзаголовок (до 300 знаков)
+  "heroStats": [ { "label": string }, { "label": string }, { "label": string } ],
+
+  "whyNowEyebrow": string,                            // напр. "Почему сейчас" (можно сохранить)
+  "whyNowTitle": string,                              // h2 секции, 2–6 слов
+  "whyNowReasons": [
+    { "title": string, "body": string }               // 3–4 карточки, body 1–2 предложения
+  ],
+
+  "collectionEyebrow": string,                        // напр. "Весь каталог"
+  "collectionTitle": string,                          // h2 секции
+  "collectionDesc": string,                           // 1–2 предложения
+
+  "toursEyebrow": string,                             // напр. "Готовые маршруты"
+  "toursTitle": string,                               // напр. "Туры в {country}"
+  "toursLead": string,                                // 1 предложение перед сеткой туров
+
+  "howToGetEyebrow": string,                          // напр. "Перелёт"
+  "howToGetTitle": string,                            // напр. "Как добраться до {country}"
+  "howToGetDesc": string,                             // 1–2 предложения, без конкретных цен
+
+  "esimEyebrow": string,                              // напр. "Связь"
+  "esimTitle": string,                                // напр. "Интернет в поездке без лишней возни"
+  "esimDesc": string,                                 // 1–2 предложения, без цен
+
+  "blogEyebrow": string,                              // напр. "Полезное"
+  "blogTitle": string,                                // напр. "Почитайте перед поездкой"
+  "blogTeasers": [
+    { "title": string, "desc": string, "tag": string } // 3–4 карточки, tag = "Лайфхаки" | "Страны" | "Маршруты" | "Кухня"
+  ],
+
+  "forWhomEyebrow": string,                           // напр. "Аудитория"
+  "forWhomTitle": string,                             // напр. "Эти туры подойдут, если вы:"
+  "forWhomItems": [ string, ... ],                    // 5–7 коротких буллетов
+
+  "whyAuthorEyebrow": string,                         // напр. "Формат"
+  "whyAuthorTitle": string,                           // напр. "Почему с авторским туром проще"
+  "whyAuthorCards": [
+    { "title": string, "body": string }               // 4–5 карточек
+  ],
+
+  "faqEyebrow": string,
+  "faqTitle": string,
+  "faqItems": [
+    { "q": string, "a": string }                      // 5–7 пар; a 1–3 предложения, без выдумок
+  ],
+
+  "finalCtaHeadline": string,                         // 1 предложение, призыв
+  "finalCtaSub": string                               // 1–2 предложения, что можно сделать
+}`;
+
 export const FACT_CHECK_PROMPT = `${SYSTEM_GUARDRAILS}
 
 Задача: проверить готовый маркетинговый текст на выдуманные факты.

@@ -13,13 +13,25 @@ import type { LlmClient } from './modules/ai/llmClient.js';
 import { AnthropicClient } from './modules/ai/anthropicClient.js';
 import { analyzeNews, pickTopInsight } from './modules/ai/newsAnalyzer.js';
 import { generatePost, factCheckPost } from './modules/ai/postGenerator.js';
+import { generateLandingContent } from './modules/ai/landingContentGenerator.js';
 import { createTourClient } from './modules/tours/index.js';
 import { sanitizeGeoFilter } from './modules/tours/youtravelClient.js';
 import { rankTours } from './modules/tours/tourRanker.js';
 import { generateLanding } from './modules/landing/landingGenerator.js';
-import { saveResult, updateIndex } from './modules/deploy/manifest.js';
-import type { PipelineResult } from './types/result.js';
+import {
+  saveResult,
+  saveRejectedResult,
+  updateIndex,
+  updateIndexRejected,
+} from './modules/deploy/manifest.js';
+import type {
+  PipelineResult,
+  PipelineRunResult,
+  RejectedPipelineResult,
+  RejectionReason,
+} from './types/result.js';
 import type { NewsItem } from './types/news.js';
+import type { TravelInsight } from './types/insight.js';
 
 const AGENT_VERSION = '0.1.0';
 const SOURCES_PATH = path.join(AGENT_ROOT, 'src', 'config', 'sources.json');
@@ -56,7 +68,61 @@ function pickNewsForInsight(news: NewsItem[], insightUrl: string): NewsItem {
   return news[0]!;
 }
 
-export async function runPipeline(options: PipelineOptions = {}): Promise<PipelineResult> {
+const CONFIDENCE_THRESHOLD = 0.4;
+const MIN_TOURS = 3;
+
+const REJECTION_LABELS: Record<RejectionReason, string> = {
+  no_news: 'Не удалось получить новости из выбранных источников',
+  low_confidence: 'Инфоповод слабо связан с travel (низкая уверенность LLM)',
+  unknown_country: 'LLM не смог определить страну / направление',
+  no_tours: 'Подобрано слишком мало релевантных туров',
+  llm_error: 'Ошибка анализа новостей LLM',
+};
+
+function buildRejection(input: {
+  reason: RejectionReason;
+  details: string;
+  sourceId?: string;
+  runId?: string;
+  news?: NewsItem[];
+  insights?: TravelInsight[];
+  topInsight?: TravelInsight;
+}): RejectedPipelineResult {
+  const message = `${REJECTION_LABELS[input.reason]}. ${input.details}`.trim();
+  const rejected: RejectedPipelineResult = {
+    status: 'rejected',
+    reason: input.reason,
+    message,
+    newsSampled: (input.news ?? []).slice(0, 10).map((n) => ({
+      title: n.title,
+      url: n.url,
+      sourceName: n.sourceName,
+    })),
+    insights: input.insights ?? [],
+    meta: {
+      createdAt: new Date().toISOString(),
+      agentVersion: AGENT_VERSION,
+      ...(input.runId ? { runId: input.runId } : {}),
+    },
+    ...(input.sourceId ? { sourceId: input.sourceId } : {}),
+    ...(input.topInsight ? { topInsight: input.topInsight } : {}),
+  };
+  return rejected;
+}
+
+async function persistRejection(result: RejectedPipelineResult): Promise<RejectedPipelineResult> {
+  const slug = await saveRejectedResult(result);
+  await updateIndexRejected(result, slug);
+  logger.warn(
+    { reason: result.reason, message: result.message, slug },
+    'Pipeline rejected (saved to results)',
+  );
+  return result;
+}
+
+export async function runPipeline(
+  options: PipelineOptions = {},
+): Promise<PipelineRunResult> {
   const env = options.env ?? getEnv();
   const llm =
     options.llmClient ??
@@ -65,28 +131,74 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
       model: env.ANTHROPIC_MODEL,
     });
 
-  logger.info({ sourceId: options.sourceId ?? 'all' }, 'Pipeline started');
+  const runId = options.runId;
+  const sourceId = options.sourceId;
+
+  logger.info({ sourceId: sourceId ?? 'all' }, 'Pipeline started');
 
   const allSources = await loadSources();
-  const sources = pickSources(allSources, options.sourceId);
+  const sources = pickSources(allSources, sourceId);
   logger.info({ count: sources.length }, 'Sources selected');
 
   const news = await fetchAllNews(sources, { maxAgeDays: 21, maxPerSource: 5 });
   if (news.length === 0) {
-    throw new Error('Pipeline: no news fetched from enabled sources');
+    return persistRejection(
+      buildRejection({
+        reason: 'no_news',
+        details: `Источники (${sources.map((s) => s.id).join(', ')}) не вернули ни одной новости за последние 21 день.`,
+        ...(sourceId ? { sourceId } : {}),
+        ...(runId ? { runId } : {}),
+      }),
+    );
   }
   logger.info({ count: news.length }, 'News fetched');
 
-  const insights = await analyzeNews(llm, news);
+  let insights: TravelInsight[];
+  try {
+    insights = await analyzeNews(llm, news);
+  } catch (err) {
+    return persistRejection(
+      buildRejection({
+        reason: 'llm_error',
+        details: (err as Error).message,
+        ...(sourceId ? { sourceId } : {}),
+        ...(runId ? { runId } : {}),
+        news,
+      }),
+    );
+  }
+
   const topInsight = pickTopInsight(insights);
   logger.info(
     { country: topInsight.country, confidence: topInsight.confidenceScore },
     'Top insight selected',
   );
 
-  if (topInsight.confidenceScore < 0.4) {
-    throw new Error(
-      `Pipeline: top insight has confidenceScore=${topInsight.confidenceScore} (<0.4). Aborting to avoid weak post.`,
+  if (topInsight.confidenceScore < CONFIDENCE_THRESHOLD) {
+    return persistRejection(
+      buildRejection({
+        reason: 'low_confidence',
+        details: `confidenceScore=${topInsight.confidenceScore} (<${CONFIDENCE_THRESHOLD}). Попробуйте другой источник или запустите без фильтра --source.`,
+        ...(sourceId ? { sourceId } : {}),
+        ...(runId ? { runId } : {}),
+        news,
+        insights,
+        topInsight,
+      }),
+    );
+  }
+
+  if (!sanitizeGeoFilter(topInsight.country)) {
+    return persistRejection(
+      buildRejection({
+        reason: 'unknown_country',
+        details: `LLM вернул country="${topInsight.country}". Без направления туры подобрать нельзя.`,
+        ...(sourceId ? { sourceId } : {}),
+        ...(runId ? { runId } : {}),
+        news,
+        insights,
+        topInsight,
+      }),
     );
   }
 
@@ -104,10 +216,18 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
   const rawTours = await tourClient.search(tourSearch);
   logger.info({ count: rawTours.length }, 'Tours fetched');
 
-  const tours = rankTours(rawTours, topInsight, { minCount: 3, maxCount: 8 });
-  if (tours.length < 3) {
-    throw new Error(
-      `Pipeline: only ${tours.length} tours after ranking (need at least 3). Country="${topInsight.country}"`,
+  const tours = rankTours(rawTours, topInsight, { minCount: MIN_TOURS, maxCount: 8 });
+  if (tours.length < MIN_TOURS) {
+    return persistRejection(
+      buildRejection({
+        reason: 'no_tours',
+        details: `После ранжирования осталось ${tours.length} туров (нужно минимум ${MIN_TOURS}) для страны "${topInsight.country}".`,
+        ...(sourceId ? { sourceId } : {}),
+        ...(runId ? { runId } : {}),
+        news,
+        insights,
+        topInsight,
+      }),
     );
   }
   logger.info({ count: tours.length }, 'Tours ranked');
@@ -126,11 +246,26 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
     logger.warn({ err }, 'Fact-check failed (continuing)');
   }
 
+  const landingContent = await generateLandingContent(llm, {
+    insight: topInsight,
+    post,
+    tours,
+  });
+  logger.info(
+    {
+      reasons: landingContent.whyNowReasons.length,
+      faq: landingContent.faqItems.length,
+      blog: landingContent.blogTeasers.length,
+    },
+    'Landing content blocks ready',
+  );
+
   const landing = await generateLanding({
     insight: topInsight,
     post,
     news: sourceNews,
     tours,
+    content: landingContent,
     baseUrl: env.LANDING_BASE_URL,
   });
 
@@ -138,6 +273,7 @@ export async function runPipeline(options: PipelineOptions = {}): Promise<Pipeli
     sourceNews.imageUrl ?? tours.find((t) => t.imageUrl)?.imageUrl;
 
   const result: PipelineResult = {
+    status: 'success',
     news: {
       title: sourceNews.title,
       sourceName: sourceNews.sourceName,

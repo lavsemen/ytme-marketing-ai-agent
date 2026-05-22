@@ -2,6 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { SourcesFileSchema, SourceSchema } from '../src/config/sources.schema.js';
 import { TourSchema } from '../src/types/tour.js';
 import { TravelInsightSchema } from '../src/types/insight.js';
+import {
+  isRejected,
+  RejectedPipelineResultSchema,
+  ResultMetaSchema,
+  type PipelineRunResult,
+} from '../src/types/result.js';
 
 describe('zod schemas', () => {
   describe('SourceSchema', () => {
@@ -121,6 +127,80 @@ describe('zod schemas', () => {
         confidenceScore: 1.5,
       });
       expect(result.success).toBe(false);
+    });
+  });
+
+  describe('RejectedPipelineResultSchema', () => {
+    it('accepts minimal rejected result and isRejected returns true', () => {
+      const parsed = RejectedPipelineResultSchema.safeParse({
+        status: 'rejected',
+        reason: 'low_confidence',
+        message: 'confidence=0.25',
+        meta: { createdAt: new Date().toISOString(), agentVersion: '0.1.0' },
+      });
+      expect(parsed.success).toBe(true);
+      if (parsed.success) {
+        const run: PipelineRunResult = parsed.data;
+        expect(isRejected(run)).toBe(true);
+        expect(parsed.data.newsSampled).toEqual([]);
+        expect(parsed.data.insights).toEqual([]);
+      }
+    });
+
+    it('rejects unknown reason', () => {
+      const parsed = RejectedPipelineResultSchema.safeParse({
+        status: 'rejected',
+        reason: 'bad_weather',
+        message: 'x',
+        meta: { createdAt: new Date().toISOString(), agentVersion: '0.1.0' },
+      });
+      expect(parsed.success).toBe(false);
+    });
+  });
+
+  describe('ResultMetaSchema', () => {
+    it('accepts success meta with landingUrl', () => {
+      const parsed = ResultMetaSchema.safeParse({
+        slug: 'china-abc',
+        createdAt: new Date().toISOString(),
+        newsTitle: 'Hello',
+        country: 'Китай',
+        toursCount: 8,
+        landingUrl: 'https://example.com/landings/china-abc/',
+        status: 'success',
+      });
+      expect(parsed.success).toBe(true);
+    });
+
+    it('accepts rejected meta without landingUrl', () => {
+      const parsed = ResultMetaSchema.safeParse({
+        slug: 'rejected-12345',
+        createdAt: new Date().toISOString(),
+        newsTitle: 'Run skipped (low_confidence)',
+        toursCount: 0,
+        status: 'rejected',
+        rejectionReason: 'low_confidence',
+        rejectionMessage: 'confidence=0.25',
+      });
+      expect(parsed.success).toBe(true);
+      if (parsed.success) {
+        expect(parsed.data.landingUrl).toBeUndefined();
+        expect(parsed.data.rejectionReason).toBe('low_confidence');
+      }
+    });
+
+    it('defaults status to success for legacy entries', () => {
+      const parsed = ResultMetaSchema.safeParse({
+        slug: 'legacy',
+        createdAt: new Date().toISOString(),
+        newsTitle: 'Legacy',
+        toursCount: 5,
+        landingUrl: 'https://example.com/landings/legacy/',
+      });
+      expect(parsed.success).toBe(true);
+      if (parsed.success) {
+        expect(parsed.data.status).toBe('success');
+      }
     });
   });
 });

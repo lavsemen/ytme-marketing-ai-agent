@@ -4,6 +4,7 @@ import { LandingInfoSchema } from './landing.js';
 import { TourSchema } from './tour.js';
 
 export const PipelineResultSchema = z.object({
+  status: z.literal('success').default('success'),
   news: z.object({
     title: z.string(),
     sourceName: z.string(),
@@ -29,13 +30,56 @@ export const PipelineResultSchema = z.object({
 
 export type PipelineResult = z.infer<typeof PipelineResultSchema>;
 
+export const REJECTION_REASONS = [
+  'no_news',
+  'low_confidence',
+  'unknown_country',
+  'no_tours',
+  'llm_error',
+] as const;
+export type RejectionReason = (typeof REJECTION_REASONS)[number];
+
+export const RejectedPipelineResultSchema = z.object({
+  status: z.literal('rejected'),
+  reason: z.enum(REJECTION_REASONS),
+  message: z.string(),
+  sourceId: z.string().optional(),
+  newsSampled: z
+    .array(
+      z.object({
+        title: z.string(),
+        url: z.string().url(),
+        sourceName: z.string(),
+      }),
+    )
+    .default([]),
+  insights: z.array(TravelInsightSchema).default([]),
+  topInsight: TravelInsightSchema.optional(),
+  meta: z.object({
+    createdAt: z.string().datetime(),
+    agentVersion: z.string(),
+    runId: z.string().optional(),
+  }),
+});
+
+export type RejectedPipelineResult = z.infer<typeof RejectedPipelineResultSchema>;
+
+export type PipelineRunResult = PipelineResult | RejectedPipelineResult;
+
+export function isRejected(r: PipelineRunResult): r is RejectedPipelineResult {
+  return r.status === 'rejected';
+}
+
 export const ResultMetaSchema = z.object({
   slug: z.string(),
   createdAt: z.string().datetime(),
   newsTitle: z.string(),
   country: z.string().optional(),
-  toursCount: z.number().int().min(0),
-  landingUrl: z.string().url(),
+  toursCount: z.number().int().min(0).default(0),
+  landingUrl: z.string().url().optional(),
+  status: z.enum(['success', 'rejected']).default('success'),
+  rejectionReason: z.enum(REJECTION_REASONS).optional(),
+  rejectionMessage: z.string().optional(),
 });
 
 export type ResultMeta = z.infer<typeof ResultMetaSchema>;
