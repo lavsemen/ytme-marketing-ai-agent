@@ -4,7 +4,7 @@ import { RotateCcw, Save, AlertTriangle } from 'lucide-react';
 import {
   DEFAULT_PROMPTS,
   loadPromptsFromRepo,
-  savePromptsToRepo,
+  savePromptsAtomic,
   type PromptKey,
   type PromptsDto,
   PROMPT_HINTS,
@@ -40,11 +40,14 @@ export function PromptsPage(): ReactNode {
   }, [query.data]);
 
   const saveMutation = useMutation({
-    mutationFn: async (args: { prompts: PromptsDto; sha: string | null; message: string }) => {
+    mutationFn: async (args: { prompts: PromptsDto; message: string }) => {
       if (!pat) throw new Error('no token');
-      await savePromptsToRepo(pat, args.prompts, args.sha, args.message);
+      // Atomic save always refetches the current sha right before commit,
+      // so concurrent edits or external commits don't 409.
+      await savePromptsAtomic(pat, args.prompts, args.message);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['prompts'] }),
+    onError: () => qc.invalidateQueries({ queryKey: ['prompts'] }),
   });
 
   const dirty = useMemo(() => {
@@ -77,7 +80,6 @@ export function PromptsPage(): ReactNode {
     if (!query.data || !draft) return;
     await saveMutation.mutateAsync({
       prompts: draft,
-      sha: query.data.sha,
       message: 'admin: update agent prompts',
     });
   }
@@ -96,7 +98,12 @@ export function PromptsPage(): ReactNode {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={resetAll} className="btn-ghost">
+          <button
+            type="button"
+            onClick={resetAll}
+            disabled={saveMutation.isPending}
+            className="btn-ghost"
+          >
             <RotateCcw size={14} /> Сбросить всё
           </button>
           <button

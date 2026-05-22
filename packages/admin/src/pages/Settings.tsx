@@ -10,7 +10,7 @@ import {
   MONTH_RANGE_LABELS,
   VOICE_LABELS,
   loadSettingsFromRepo,
-  saveSettingsToRepo,
+  saveSettingsAtomic,
   type AgentSettingsDto,
   type BrandAudience,
   type BrandVoice,
@@ -56,11 +56,12 @@ export function SettingsPage(): ReactNode {
   }, [draft, query.data]);
 
   const saveMutation = useMutation({
-    mutationFn: async (args: { settings: AgentSettingsDto; sha: string | null; message: string }) => {
+    mutationFn: async (args: { settings: AgentSettingsDto; message: string }) => {
       if (!pat) throw new Error('no token');
-      await saveSettingsToRepo(pat, args.settings, args.sha, args.message);
+      await saveSettingsAtomic(pat, args.settings, args.message);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['settings'] }),
+    onError: () => qc.invalidateQueries({ queryKey: ['settings'] }),
   });
 
   if (!pat) return <Notice tone="warn">Нужен PAT с правом Contents: Read and write.</Notice>;
@@ -100,7 +101,6 @@ export function SettingsPage(): ReactNode {
     if (!query.data || !draft) return;
     await saveMutation.mutateAsync({
       settings: draft,
-      sha: query.data.sha,
       message: 'admin: update agent settings',
     });
   }
@@ -119,7 +119,12 @@ export function SettingsPage(): ReactNode {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={resetTab} className="btn-ghost">
+          <button
+            type="button"
+            onClick={resetTab}
+            disabled={saveMutation.isPending}
+            className="btn-ghost"
+          >
             <RotateCcw size={14} /> Сбросить вкладку
           </button>
           <button

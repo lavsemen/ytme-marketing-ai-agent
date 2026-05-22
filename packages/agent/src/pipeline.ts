@@ -16,7 +16,7 @@ import { generatePost, factCheckPost } from './modules/ai/postGenerator.js';
 import { generateLandingContent } from './modules/ai/landingContentGenerator.js';
 import { createTourClient } from './modules/tours/index.js';
 import { sanitizeGeoFilter } from './modules/tours/youtravelClient.js';
-import { rankTours } from './modules/tours/tourRanker.js';
+import { rankToursDetailed } from './modules/tours/tourRanker.js';
 import { applyTourFilters } from './modules/tours/tourFilters.js';
 import { generateLanding } from './modules/landing/landingGenerator.js';
 import {
@@ -293,7 +293,17 @@ export async function runPipeline(
   if (city) tourSearch.city = city;
 
   const rawTours = await tourClient.search(tourSearch);
-  logger.info({ count: rawTours.length }, 'Tours fetched');
+  const countryMatchCount = rawTours.filter(
+    (t) => (t.country ?? '').toLowerCase().trim() === (topInsight.country ?? '').toLowerCase().trim(),
+  ).length;
+  logger.info(
+    {
+      total: rawTours.length,
+      countryMatch: countryMatchCount,
+      requested: { country, region, city },
+    },
+    'Tours fetched (API relevance check)',
+  );
 
   const { kept: filteredTours, removed: filteredOut } = applyTourFilters(
     rawTours,
@@ -306,10 +316,11 @@ export async function runPipeline(
     );
   }
 
-  const tours = rankTours(filteredTours, topInsight, {
+  const ranked = rankToursDetailed(filteredTours, topInsight, {
     minCount: settings.pipeline.minTours,
     maxCount: settings.pipeline.maxTours,
   });
+  const tours = ranked.tours;
   if (tours.length < settings.pipeline.minTours) {
     return persistRejection(
       buildRejection({
@@ -322,7 +333,18 @@ export async function runPipeline(
       }),
     );
   }
-  logger.info({ count: tours.length }, 'Tours ranked');
+  logger.info(
+    {
+      count: tours.length,
+      keywords: {
+        primary: ranked.keywords.primary,
+        secondary: ranked.keywords.secondary,
+        detectedLocations: ranked.keywords.detectedLocations,
+      },
+      topByScore: ranked.debug,
+    },
+    'Tours ranked (top-5 with score breakdown)',
+  );
 
   const post = await generatePost(llm, topInsight, tours, {
     systemPrompt: effective.postGenerator,

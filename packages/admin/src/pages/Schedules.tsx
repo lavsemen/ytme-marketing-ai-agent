@@ -7,9 +7,9 @@ import {
   DEFAULT_TZ,
   SCHEDULES_MAX_ENABLED,
   TZ_OPTIONS,
+  applyScheduleChange,
   loadSchedulesFromRepo,
   newScheduleId,
-  saveSchedulesToRepo,
   type ScheduleRuleDto,
   type SchedulesDto,
 } from '../api/schedules';
@@ -56,11 +56,14 @@ export function SchedulesPage(): ReactNode {
   });
 
   const saveMutation = useMutation({
-    mutationFn: async (args: { schedules: SchedulesDto; sha: string | null; message: string }) => {
+    mutationFn: async (
+      mutator: (current: SchedulesDto) => { next: SchedulesDto; message: string },
+    ) => {
       if (!pat) throw new Error('no token');
-      await saveSchedulesToRepo(pat, args.schedules, args.sha, args.message);
+      await applyScheduleChange(pat, mutator);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['schedules'] }),
+    onError: () => qc.invalidateQueries({ queryKey: ['schedules'] }),
   });
 
   const dispatchMutation = useMutation({
@@ -74,57 +77,58 @@ export function SchedulesPage(): ReactNode {
   const [showForm, setShowForm] = useState(false);
 
   const rules = query.data?.schedules.rules ?? [];
-  const sha = query.data?.sha ?? null;
   const sources = sourcesQuery.data?.sources ?? [];
   const enabledCount = rules.filter((r) => r.enabled).length;
+  const busy = saveMutation.isPending;
 
   function openCreate(): void {
+    if (busy) return;
     setEditing(null);
     setShowForm(true);
   }
   function openEdit(r: ScheduleRuleDto): void {
+    if (busy) return;
     setEditing(r);
     setShowForm(true);
   }
 
   async function handleSave(draft: DraftRule, editingId: string | null): Promise<void> {
-    const now = new Date().toISOString();
-    let next: ScheduleRuleDto[];
-    if (editingId) {
-      next = rules.map((r) =>
-        r.id === editingId
-          ? {
-              ...r,
-              ...draft,
-              hint: draft.hint?.trim() || undefined,
-              updatedAt: now,
-            }
-          : r,
-      );
-    } else {
-      const newRule: ScheduleRuleDto = {
-        id: newScheduleId(),
-        ...draft,
-        hint: draft.hint?.trim() || undefined,
-        createdAt: now,
-        updatedAt: now,
+    await saveMutation.mutateAsync((current) => {
+      const now = new Date().toISOString();
+      let next: ScheduleRuleDto[];
+      if (editingId) {
+        next = current.rules.map((r) =>
+          r.id === editingId
+            ? {
+                ...r,
+                ...draft,
+                hint: draft.hint?.trim() || undefined,
+                updatedAt: now,
+              }
+            : r,
+        );
+      } else {
+        const newRule: ScheduleRuleDto = {
+          id: newScheduleId(),
+          ...draft,
+          hint: draft.hint?.trim() || undefined,
+          createdAt: now,
+          updatedAt: now,
+        };
+        next = [...current.rules, newRule];
+      }
+      const wouldEnabled = next.filter((r) => r.enabled).length;
+      if (wouldEnabled > SCHEDULES_MAX_ENABLED) {
+        throw new Error(
+          `Лимит активных правил: максимум ${SCHEDULES_MAX_ENABLED}. Сейчас стало бы ${wouldEnabled}. Отключите лишние.`,
+        );
+      }
+      return {
+        next: { rules: next },
+        message: editingId
+          ? `admin: update schedule "${draft.name}"`
+          : `admin: add schedule "${draft.name}"`,
       };
-      next = [...rules, newRule];
-    }
-
-    const wouldEnabled = next.filter((r) => r.enabled).length;
-    if (wouldEnabled > SCHEDULES_MAX_ENABLED) {
-      throw new Error(
-        `Лимит активных правил: максимум ${SCHEDULES_MAX_ENABLED}. Сейчас стало бы ${wouldEnabled}. Отключите лишние.`,
-      );
-    }
-
-    await saveMutation.mutateAsync({
-      schedules: { rules: next },
-      sha,
-      message: editingId
-        ? `admin: update schedule "${draft.name}"`
-        : `admin: add schedule "${draft.name}"`,
     });
     setShowForm(false);
     setEditing(null);
@@ -132,12 +136,10 @@ export function SchedulesPage(): ReactNode {
 
   async function handleDelete(r: ScheduleRuleDto): Promise<void> {
     if (!confirm(`Удалить правило "${r.name}"?`)) return;
-    const next = rules.filter((x) => x.id !== r.id);
-    await saveMutation.mutateAsync({
-      schedules: { rules: next },
-      sha,
+    await saveMutation.mutateAsync((current) => ({
+      next: { rules: current.rules.filter((x) => x.id !== r.id) },
       message: `admin: remove schedule "${r.name}"`,
-    });
+    }));
   }
 
   async function handleToggle(r: ScheduleRuleDto): Promise<void> {
@@ -148,13 +150,27 @@ export function SchedulesPage(): ReactNode {
       );
       return;
     }
-    const next = rules.map((x) =>
-      x.id === r.id ? { ...x, enabled: !x.enabled, updatedAt: new Date().toISOString() } : x,
-    );
-    await saveMutation.mutateAsync({
-      schedules: { rules: next },
-      sha,
-      message: `admin: ${r.enabled ? 'disable' : 'enable'} schedule "${r.name}"`,
+    await saveMutation.mutateAsync((current) => {
+      const existing = current.rules.find((x) => x.id === r.id);
+      if (!existing) return { next: current, message: `admin: noop on schedule "${r.id}"` };
+      // Re-check limit against FRESH rules (someone else may have toggled).
+      if (!existing.enabled) {
+        const enabledNow = current.rules.filter((x) => x.enabled).length;
+        if (enabledNow >= SCHEDULES_MAX_ENABLED) {
+          throw new Error(
+            `Лимит активных правил: максимум ${SCHEDULES_MAX_ENABLED}. Отключите другое перед включением.`,
+          );
+        }
+      }
+      const next = current.rules.map((x) =>
+        x.id === r.id
+          ? { ...x, enabled: !existing.enabled, updatedAt: new Date().toISOString() }
+          : x,
+      );
+      return {
+        next: { rules: next },
+        message: `admin: ${existing.enabled ? 'disable' : 'enable'} schedule "${existing.name}"`,
+      };
     });
   }
 
@@ -195,7 +211,7 @@ export function SchedulesPage(): ReactNode {
             <Play size={14} />
             {dispatchMutation.isPending ? 'Запускаем…' : 'Запустить сейчас'}
           </button>
-          <button type="button" onClick={openCreate} className="btn-primary">
+          <button type="button" onClick={openCreate} className="btn-primary" disabled={busy}>
             <Plus size={16} /> Добавить правило
           </button>
         </div>
@@ -248,8 +264,8 @@ export function SchedulesPage(): ReactNode {
                   <button
                     type="button"
                     onClick={() => handleToggle(r)}
-                    disabled={saveMutation.isPending}
-                    className={r.enabled ? 'ds-badge-success' : 'ds-badge-muted'}
+                    disabled={busy}
+                    className={`${r.enabled ? 'ds-badge-success' : 'ds-badge-muted'} ${busy ? 'opacity-50' : ''}`}
                   >
                     {r.enabled ? 'Активно' : 'Выключено'}
                   </button>
@@ -282,7 +298,8 @@ export function SchedulesPage(): ReactNode {
                   <button
                     type="button"
                     onClick={() => openEdit(r)}
-                    className="rounded-md p-1.5 text-ink-muted transition-colors hover:bg-surface-3 hover:text-ink-primary"
+                    disabled={busy}
+                    className="rounded-md p-1.5 text-ink-muted transition-colors hover:bg-surface-3 hover:text-ink-primary disabled:opacity-40 disabled:hover:bg-transparent"
                     title="Изменить"
                   >
                     <Pencil size={14} />
@@ -290,8 +307,8 @@ export function SchedulesPage(): ReactNode {
                   <button
                     type="button"
                     onClick={() => handleDelete(r)}
-                    disabled={saveMutation.isPending}
-                    className="ml-1 rounded-md p-1.5 text-danger transition-colors hover:bg-danger/10"
+                    disabled={busy}
+                    className="ml-1 rounded-md p-1.5 text-danger transition-colors hover:bg-danger/10 disabled:opacity-40 disabled:hover:bg-transparent"
                     title="Удалить"
                   >
                     <Trash2 size={14} />
@@ -305,7 +322,7 @@ export function SchedulesPage(): ReactNode {
 
       {saveMutation.isError && (
         <div className="ds-notice ds-notice-danger">
-          Не удалось сохранить: {(saveMutation.error as Error).message}
+          Не удалось сохранить: {formatGithubApiError(saveMutation.error)}
         </div>
       )}
 

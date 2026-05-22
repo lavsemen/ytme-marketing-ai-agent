@@ -4,9 +4,10 @@ import { Plus, Trash2, Pencil, X, Check } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import {
+  applySourceChange,
   createGithubClient,
+  formatGithubApiError,
   getSourcesFile,
-  saveSourcesFile,
   type SourceDto,
 } from '../api/github';
 import { useAuth } from '../hooks/useAuth';
@@ -46,73 +47,83 @@ export function SourcesPage(): ReactNode {
   });
 
   const saveMutation = useMutation({
-    mutationFn: async (args: {
-      sources: SourceDto[];
-      sha: string | null;
-      message: string;
-    }) => {
+    mutationFn: async (
+      mutator: (current: SourceDto[]) => { next: SourceDto[]; message: string },
+    ) => {
       if (!client) throw new Error('no client');
-      await saveSourcesFile(client, args.sources, args.sha, args.message);
+      await applySourceChange(client, mutator);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['sources'] }),
+    // Even on error, force a refetch so the next attempt uses fresh sha/data
+    // (otherwise the user is stuck retrying with stale state).
+    onError: () => qc.invalidateQueries({ queryKey: ['sources'] }),
   });
 
   const [editing, setEditing] = useState<SourceDto | null>(null);
   const [showForm, setShowForm] = useState(false);
 
   const sources = query.data?.sources ?? [];
-  const sha = query.data?.sha ?? null;
+  const busy = saveMutation.isPending;
 
   function openCreate() {
+    if (busy) return;
     setEditing(null);
     setShowForm(true);
   }
   function openEdit(s: SourceDto) {
+    if (busy) return;
     setEditing(s);
     setShowForm(true);
   }
 
-  async function handleSave(values: SourceFormValues) {
-    const now = new Date().toISOString();
-    const next: SourceDto[] = editing
-      ? sources.map((s) =>
-          s.id === editing.id ? { ...values, createdAt: s.createdAt ?? now, updatedAt: now } : s,
-        )
-      : [...sources, { ...values, createdAt: now, updatedAt: now }];
-
-    if (!editing && sources.some((s) => s.id === values.id)) {
-      throw new Error(`Source with id "${values.id}" already exists`);
-    }
-
-    await saveMutation.mutateAsync({
-      sources: next,
-      sha,
-      message: editing
-        ? `admin: update source "${values.id}"`
-        : `admin: add source "${values.id}"`,
+  async function handleSave(values: SourceFormValues): Promise<void> {
+    const editingId = editing?.id ?? null;
+    await saveMutation.mutateAsync((current) => {
+      const now = new Date().toISOString();
+      let next: SourceDto[];
+      if (editingId) {
+        const existing = current.find((s) => s.id === editingId);
+        next = current.map((s) =>
+          s.id === editingId
+            ? {
+                ...values,
+                createdAt: existing?.createdAt ?? now,
+                updatedAt: now,
+              }
+            : s,
+        );
+        return { next, message: `admin: update source "${values.id}"` };
+      }
+      if (current.some((s) => s.id === values.id)) {
+        throw new Error(`Source with id "${values.id}" already exists`);
+      }
+      next = [...current, { ...values, createdAt: now, updatedAt: now }];
+      return { next, message: `admin: add source "${values.id}"` };
     });
     setShowForm(false);
     setEditing(null);
   }
 
-  async function handleDelete(s: SourceDto) {
+  async function handleDelete(s: SourceDto): Promise<void> {
     if (!confirm(`Удалить источник "${s.name}"?`)) return;
-    const next = sources.filter((x) => x.id !== s.id);
-    await saveMutation.mutateAsync({
-      sources: next,
-      sha,
+    await saveMutation.mutateAsync((current) => ({
+      next: current.filter((x) => x.id !== s.id),
       message: `admin: remove source "${s.id}"`,
-    });
+    }));
   }
 
-  async function handleToggle(s: SourceDto) {
-    const next = sources.map((x) =>
-      x.id === s.id ? { ...x, enabled: !x.enabled, updatedAt: new Date().toISOString() } : x,
-    );
-    await saveMutation.mutateAsync({
-      sources: next,
-      sha,
-      message: `admin: ${s.enabled ? 'disable' : 'enable'} "${s.id}"`,
+  async function handleToggle(s: SourceDto): Promise<void> {
+    await saveMutation.mutateAsync((current) => {
+      const existing = current.find((x) => x.id === s.id);
+      // If the record was removed externally between cache and now, no-op.
+      if (!existing) return { next: current, message: `admin: noop on "${s.id}"` };
+      const next = current.map((x) =>
+        x.id === s.id ? { ...x, enabled: !existing.enabled, updatedAt: new Date().toISOString() } : x,
+      );
+      return {
+        next,
+        message: `admin: ${existing.enabled ? 'disable' : 'enable'} "${s.id}"`,
+      };
     });
   }
 
@@ -138,7 +149,7 @@ export function SourcesPage(): ReactNode {
             Все правки коммитятся в <code className="font-mono text-ink-secondary">main</code> через GitHub API.
           </p>
         </div>
-        <button type="button" onClick={openCreate} className="btn-primary">
+        <button type="button" onClick={openCreate} className="btn-primary" disabled={busy}>
           <Plus size={16} /> Добавить
         </button>
       </div>
@@ -189,8 +200,8 @@ export function SourcesPage(): ReactNode {
                   <button
                     type="button"
                     onClick={() => handleToggle(s)}
-                    disabled={saveMutation.isPending}
-                    className={s.enabled ? 'ds-badge-success' : 'ds-badge-muted'}
+                    disabled={busy}
+                    className={`${s.enabled ? 'ds-badge-success' : 'ds-badge-muted'} ${busy ? 'opacity-50' : ''}`}
                   >
                     {s.enabled ? <Check size={12} /> : <X size={12} />}
                     {s.enabled ? 'Включён' : 'Выключен'}
@@ -200,7 +211,8 @@ export function SourcesPage(): ReactNode {
                   <button
                     type="button"
                     onClick={() => openEdit(s)}
-                    className="rounded-md p-1.5 text-ink-muted transition-colors hover:bg-surface-3 hover:text-ink-primary"
+                    disabled={busy}
+                    className="rounded-md p-1.5 text-ink-muted transition-colors hover:bg-surface-3 hover:text-ink-primary disabled:opacity-40 disabled:hover:bg-transparent"
                     title="Изменить"
                   >
                     <Pencil size={14} />
@@ -208,8 +220,8 @@ export function SourcesPage(): ReactNode {
                   <button
                     type="button"
                     onClick={() => handleDelete(s)}
-                    disabled={saveMutation.isPending}
-                    className="ml-1 rounded-md p-1.5 text-danger transition-colors hover:bg-danger/10"
+                    disabled={busy}
+                    className="ml-1 rounded-md p-1.5 text-danger transition-colors hover:bg-danger/10 disabled:opacity-40 disabled:hover:bg-transparent"
                     title="Удалить"
                   >
                     <Trash2 size={14} />
@@ -235,7 +247,7 @@ export function SourcesPage(): ReactNode {
 
       {saveMutation.isError && (
         <div className="ds-notice ds-notice-danger">
-          Не удалось сохранить: {(saveMutation.error as Error).message}
+          Не удалось сохранить: {formatGithubApiError(saveMutation.error)}
         </div>
       )}
     </div>

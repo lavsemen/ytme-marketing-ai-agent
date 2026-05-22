@@ -1,6 +1,11 @@
 import type { Octokit } from '@octokit/rest';
 import { CONFIG } from '../lib/config';
-import { createGithubClient, getFileContent, putFileContent } from './github';
+import {
+  commitJsonAtomic,
+  createGithubClient,
+  getFileContent,
+  putFileContent,
+} from './github';
 import defaultPromptsJson from '../data/default-prompts.json';
 
 export interface PromptsDto {
@@ -79,6 +84,27 @@ export async function savePromptsToRepo(
     message: commitMessage,
     ...(sha ? { sha } : {}),
   });
+}
+
+/**
+ * Atomic full-replace of prompts.json. Re-reads the current file purely to
+ * pick up the freshest sha (we do not merge fields — the admin UI is the
+ * source of truth for the whole prompts object).
+ */
+export async function savePromptsAtomic(
+  token: string,
+  prompts: PromptsDto,
+  commitMessage: string,
+): Promise<PromptsDto> {
+  const client = createGithubClient(token);
+  const { next } = await commitJsonAtomic<PromptsDto>(
+    client,
+    CONFIG.promptsPath,
+    (raw) => ({ ...emptyPrompts(), ...(JSON.parse(raw) as PromptsDto) }),
+    () => emptyPrompts(),
+    () => ({ next: prompts, message: commitMessage }),
+  );
+  return next;
 }
 
 function emptyPrompts(): PromptsDto {

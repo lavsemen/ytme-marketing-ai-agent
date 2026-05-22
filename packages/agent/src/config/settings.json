@@ -3,7 +3,7 @@
     "confidenceThreshold": 0.4,
     "minTours": 3,
     "maxTours": 8,
-    "tourSearchLimit": 40,
+    "tourSearchLimit": 60,
     "newsMaxAgeDays": 21,
     "newsMaxPerSource": 5
   },

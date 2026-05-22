@@ -1,5 +1,10 @@
 import { CONFIG } from '../lib/config';
-import { createGithubClient, getFileContent, putFileContent } from './github';
+import {
+  commitJsonAtomic,
+  createGithubClient,
+  getFileContent,
+  putFileContent,
+} from './github';
 
 export const BRAND_VOICES = ['friendly', 'formal', 'playful', 'luxury'] as const;
 export type BrandVoice = (typeof BRAND_VOICES)[number];
@@ -154,4 +159,25 @@ export async function saveSettingsToRepo(
     message: commitMessage,
     ...(sha ? { sha } : {}),
   });
+}
+
+/**
+ * Atomic full-replace of settings.json — always commits against the
+ * freshest sha so external commits (e.g. scheduled.yml landing) don't
+ * cause "Update is not a fast forward" errors for the admin user.
+ */
+export async function saveSettingsAtomic(
+  token: string,
+  settings: AgentSettingsDto,
+  commitMessage: string,
+): Promise<AgentSettingsDto> {
+  const client = createGithubClient(token);
+  const { next } = await commitJsonAtomic<AgentSettingsDto>(
+    client,
+    CONFIG.settingsPath,
+    (raw) => mergeSettings(JSON.parse(raw) as Partial<AgentSettingsDto>),
+    () => DEFAULT_SETTINGS,
+    () => ({ next: settings, message: commitMessage }),
+  );
+  return next;
 }

@@ -164,13 +164,38 @@ export interface FileContent {
   sha: string;
 }
 
-export async function getFileContent(client: Octokit, path: string): Promise<FileContent | null> {
+export interface GetFileOptions {
+  /**
+   * When true, bypass HTTP / CDN / browser caches so the response reflects
+   * the absolute latest commit on the branch. Required before write-with-sha
+   * flows (commitJsonAtomic) — GitHub Contents API caches ~60s and would
+   * otherwise hand us a stale sha after a 409 retry.
+   */
+  fresh?: boolean;
+}
+
+export async function getFileContent(
+  client: Octokit,
+  path: string,
+  options: GetFileOptions = {},
+): Promise<FileContent | null> {
   try {
     const res = await client.repos.getContent({
       owner: CONFIG.repoOwner,
       repo: CONFIG.repoName,
       path,
       ref: CONFIG.branch,
+      ...(options.fresh
+        ? {
+            headers: {
+              // Empty If-None-Match defeats Octokit's automatic ETag re-use,
+              // so GitHub returns the freshest sha instead of a 304 backed
+              // by a previously cached body (which can be up to ~60s stale).
+              'If-None-Match': '',
+              'Cache-Control': 'no-cache',
+            },
+          }
+        : {}),
     });
     const data = Array.isArray(res.data) ? null : res.data;
     if (!data || data.type !== 'file') return null;
@@ -202,6 +227,96 @@ export async function putFileContent(
   });
 }
 
+function isShaConflict(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { status?: number; message?: string };
+  // GitHub returns 409 with a "does not match <sha>" body when the
+  // provided sha is stale. Some edge cases return 422 with similar text.
+  if (e.status === 409) return true;
+  if (typeof e.message === 'string' && /does not match|is at|sha|stale/i.test(e.message)) {
+    if (e.status === 422 || e.status === 409) return true;
+  }
+  return false;
+}
+
+export interface JsonCommitResult<T> {
+  next: T;
+  message: string;
+}
+
+const ATOMIC_MAX_ATTEMPTS = 3;
+const ATOMIC_BACKOFF_MS = [150, 400];
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Read → mutate → commit cycle that ALWAYS fetches the latest sha right
+ * before writing. This eliminates race conditions caused by:
+ *  - stale react-query cache (user clicked twice before refetch finished)
+ *  - parallel admin actions (two toggles in flight at once)
+ *  - external commits (scheduled.yml or generate.yml landing a commit
+ *    between page load and save).
+ *
+ * Implementation notes:
+ *  - GET uses `fresh: true` so we bypass Octokit/CDN ETag cache (~60s).
+ *    Without it, the second GET after a 409 can return the same stale sha
+ *    and the retry would fail with an identical conflict.
+ *  - On a sha-mismatch (409/422 "does not match") we retry up to
+ *    ATOMIC_MAX_ATTEMPTS times with small backoff (150ms, 400ms). 3
+ *    attempts comfortably absorb the typical CI race; after that we
+ *    surface a clear, actionable error instead of silently looping.
+ *
+ * `mutator` MUST be pure with respect to the input array/object: do not
+ * mutate `current` in place. Return a fresh value.
+ */
+export async function commitJsonAtomic<T>(
+  client: Octokit,
+  path: string,
+  parse: (raw: string) => T,
+  fallback: () => T,
+  mutator: (current: T) => JsonCommitResult<T>,
+): Promise<{ next: T; sha: string }> {
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < ATOMIC_MAX_ATTEMPTS; attempt += 1) {
+    const file = await getFileContent(client, path, { fresh: true });
+    const sha = file?.sha ?? null;
+    const current = file ? parse(file.content) : fallback();
+    const { next, message } = mutator(current);
+    const content = JSON.stringify(next, null, 2) + '\n';
+
+    try {
+      await putFileContent(client, {
+        path,
+        content,
+        message,
+        ...(sha ? { sha } : {}),
+      });
+      // putFileContent returns void; we don't have the new sha here, but
+      // callers invalidate react-query so the next read gets the truth.
+      return { next, sha: sha ?? '' };
+    } catch (err) {
+      lastErr = err;
+      if (isShaConflict(err) && attempt + 1 < ATOMIC_MAX_ATTEMPTS) {
+        const delay = ATOMIC_BACKOFF_MS[attempt] ?? 400;
+        await sleep(delay);
+        continue;
+      }
+      throw err;
+    }
+  }
+  // Build a human-friendly message so the admin UI surfaces what to do
+  // (instead of dumping the raw GitHub sha mismatch text on the user).
+  const baseMsg =
+    lastErr && typeof lastErr === 'object' && 'message' in lastErr
+      ? String((lastErr as { message: string }).message)
+      : 'unknown error';
+  throw new Error(
+    `Не удалось сохранить ${path}: репозиторий несколько раз менялся параллельно (${baseMsg}). Обновите страницу и попробуйте ещё раз.`,
+  );
+}
+
 export async function getSourcesFile(
   client: Octokit,
 ): Promise<{ sources: SourceDto[]; sha: string | null }> {
@@ -230,6 +345,29 @@ export async function saveSourcesFile(
   });
 }
 
+/**
+ * Atomic update of sources.json. The mutator receives the FRESH list from
+ * the repo (not from react-query cache) so it can safely de-dupe by id and
+ * never overwrites someone else's commit silently.
+ */
+export async function applySourceChange(
+  client: Octokit,
+  mutator: (current: SourceDto[]) => JsonCommitResult<SourceDto[]>,
+): Promise<SourceDto[]> {
+  const { next } = await commitJsonAtomic<SourceDto[]>(
+    client,
+    CONFIG.sourcesPath,
+    (raw) => {
+      const parsed = JSON.parse(raw) as SourceDto[];
+      if (!Array.isArray(parsed)) throw new Error('sources.json is not an array');
+      return parsed;
+    },
+    () => [],
+    mutator,
+  );
+  return next;
+}
+
 export interface WorkflowRunSummary {
   id: number;
   status: string;
@@ -239,6 +377,22 @@ export interface WorkflowRunSummary {
   run_number: number;
   head_branch: string | null;
   display_title: string;
+  /** Filename of the workflow (e.g. "generate.yml") — useful when merging
+   *  runs from multiple workflows in the same UI. Optional for back-compat. */
+  workflow_file?: string;
+}
+
+/** GitHub API "active" statuses — anything not yet finalized. */
+const PENDING_STATUSES = new Set([
+  'queued',
+  'in_progress',
+  'waiting',
+  'pending',
+  'requested',
+]);
+
+export function isPendingStatus(status: string): boolean {
+  return PENDING_STATUSES.has(status);
 }
 
 export interface WorkflowJobSummary {
@@ -287,15 +441,29 @@ export async function dispatchScheduled(
   });
 }
 
+export interface ListRunsOptions {
+  perPage?: number;
+  /** Workflow filename (e.g. "generate.yml"). Defaults to generate workflow. */
+  workflowFile?: string;
+  /** Filter by GitHub run status. Useful values: "in_progress", "queued",
+   *  "completed". When omitted — returns runs of any status. */
+  status?: string;
+}
+
 export async function listRecentRuns(
   client: Octokit,
-  perPage = 10,
+  perPageOrOptions: number | ListRunsOptions = 10,
 ): Promise<WorkflowRunSummary[]> {
+  // Back-compat: previous signature was (client, perPage: number).
+  const opts: ListRunsOptions =
+    typeof perPageOrOptions === 'number' ? { perPage: perPageOrOptions } : perPageOrOptions;
+  const workflowFile = opts.workflowFile ?? CONFIG.workflowFile;
   const res = await client.actions.listWorkflowRuns({
     owner: CONFIG.repoOwner,
     repo: CONFIG.repoName,
-    workflow_id: CONFIG.workflowFile,
-    per_page: perPage,
+    workflow_id: workflowFile,
+    per_page: opts.perPage ?? 10,
+    ...(opts.status ? { status: opts.status as 'in_progress' | 'queued' | 'completed' } : {}),
   });
   return res.data.workflow_runs.map((r) => ({
     id: r.id,
@@ -306,7 +474,39 @@ export async function listRecentRuns(
     run_number: r.run_number,
     head_branch: r.head_branch,
     display_title: r.display_title ?? r.name ?? '',
+    workflow_file: workflowFile,
   }));
+}
+
+/**
+ * Lists all pending (queued / in-progress) runs across BOTH workflows
+ * (generate.yml + scheduled.yml) so the History page can show real-time
+ * progress for manual *and* cron-triggered runs in a single feed.
+ *
+ * We query each workflow with `status` filters; "queued" and "in_progress"
+ * cover the active states. GitHub doesn't accept multiple statuses in one
+ * call, so we make 4 small parallel requests and de-dupe by run id.
+ */
+export async function listAllPendingRuns(client: Octokit): Promise<WorkflowRunSummary[]> {
+  const workflows = [CONFIG.workflowFile, CONFIG.scheduledWorkflowFile];
+  const statuses: Array<'queued' | 'in_progress'> = ['queued', 'in_progress'];
+  const requests = workflows.flatMap((wf) =>
+    statuses.map((status) =>
+      listRecentRuns(client, { workflowFile: wf, status, perPage: 10 }).catch(() => [] as WorkflowRunSummary[]),
+    ),
+  );
+  const chunks = await Promise.all(requests);
+  const all = chunks.flat();
+  const dedup = new Map<number, WorkflowRunSummary>();
+  for (const r of all) {
+    // Defensive: GitHub occasionally returns finalized runs under
+    // status=in_progress right after they finish — filter again here.
+    if (!isPendingStatus(r.status)) continue;
+    dedup.set(r.id, r);
+  }
+  return Array.from(dedup.values()).sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+  );
 }
 
 export async function getRun(client: Octokit, runId: number): Promise<WorkflowRunSummary> {

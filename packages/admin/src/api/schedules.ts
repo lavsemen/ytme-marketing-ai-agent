@@ -1,5 +1,11 @@
 import { CONFIG } from '../lib/config';
-import { createGithubClient, getFileContent, putFileContent } from './github';
+import {
+  commitJsonAtomic,
+  createGithubClient,
+  getFileContent,
+  putFileContent,
+  type JsonCommitResult,
+} from './github';
 
 export const SCHEDULES_MAX_ENABLED = 10;
 
@@ -90,6 +96,36 @@ export async function saveSchedulesToRepo(
     message: commitMessage,
     ...(sha ? { sha } : {}),
   });
+}
+
+/**
+ * Atomic update of schedules.json — always reads the latest sha and rules
+ * from the repo before applying `mutator`. See `commitJsonAtomic` for
+ * race-condition discussion.
+ */
+export async function applyScheduleChange(
+  token: string,
+  mutator: (current: SchedulesDto) => JsonCommitResult<SchedulesDto>,
+): Promise<SchedulesDto> {
+  const client = createGithubClient(token);
+  const { next } = await commitJsonAtomic<SchedulesDto>(
+    client,
+    CONFIG.schedulesPath,
+    (raw) => {
+      const parsed = JSON.parse(raw) as Partial<SchedulesDto>;
+      const rules = Array.isArray(parsed.rules) ? parsed.rules : [];
+      return {
+        rules: rules.map((r) => ({
+          ...r,
+          tz: r.tz ?? DEFAULT_TZ,
+          enabled: Boolean(r.enabled),
+        })) as ScheduleRuleDto[],
+      };
+    },
+    () => ({ rules: [] }),
+    mutator,
+  );
+  return next;
 }
 
 /**
