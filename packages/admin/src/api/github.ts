@@ -272,6 +272,21 @@ export async function dispatchGenerate(
   });
 }
 
+export async function dispatchScheduled(
+  client: Octokit,
+  inputs: { force?: boolean } = {},
+): Promise<void> {
+  await client.actions.createWorkflowDispatch({
+    owner: CONFIG.repoOwner,
+    repo: CONFIG.repoName,
+    workflow_id: CONFIG.scheduledWorkflowFile,
+    ref: CONFIG.branch,
+    inputs: {
+      force: String(Boolean(inputs.force)),
+    },
+  });
+}
+
 export async function listRecentRuns(
   client: Octokit,
   perPage = 10,

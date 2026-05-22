@@ -5,6 +5,7 @@ import { AGENT_ROOT, readJsonIfExists, writeJson } from '../utils/fs.js';
 const CONFIG_DIR = path.join(AGENT_ROOT, 'src', 'config');
 const PROMPTS_FILE = path.join(CONFIG_DIR, 'prompts.json');
 const SETTINGS_FILE = path.join(CONFIG_DIR, 'settings.json');
+const SCHEDULES_FILE = path.join(CONFIG_DIR, 'schedules.json');
 
 const PromptsSchema = z.object({
   systemGuardrails: z.string().min(1),
@@ -170,6 +171,48 @@ export async function saveSettings(settings: AgentSettings): Promise<void> {
 
 export async function savePrompts(prompts: PromptsConfig): Promise<void> {
   await writeJson(PROMPTS_FILE, prompts);
+}
+
+/**
+ * Cron-based schedules for the `run-scheduled` CLI command.
+ * Each rule has its own cron expression and timezone; the runner picks rules
+ * whose previous cron tick falls inside the current hour window.
+ */
+export const SCHEDULES_MAX_ENABLED = 10;
+
+export const ScheduleRuleSchema = z.object({
+  id: z.string().min(1),
+  enabled: z.boolean(),
+  name: z.string().min(1).max(80),
+  cron: z.string().min(9).max(120),
+  tz: z.string().min(1).max(80).default('Europe/Moscow'),
+  source: z.string().min(1).max(80),
+  hint: z.string().max(800).optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const SchedulesConfigSchema = z.object({
+  rules: z.array(ScheduleRuleSchema),
+});
+
+export type ScheduleRule = z.infer<typeof ScheduleRuleSchema>;
+export type SchedulesConfig = z.infer<typeof SchedulesConfigSchema>;
+
+export const DEFAULT_SCHEDULES: SchedulesConfig = { rules: [] };
+
+export function mergeSchedules(override: unknown): SchedulesConfig {
+  if (!override || typeof override !== 'object') return DEFAULT_SCHEDULES;
+  return SchedulesConfigSchema.parse(override);
+}
+
+export async function loadSchedules(): Promise<SchedulesConfig> {
+  const raw = await readJsonIfExists<unknown>(SCHEDULES_FILE);
+  return mergeSchedules(raw);
+}
+
+export async function saveSchedules(s: SchedulesConfig): Promise<void> {
+  await writeJson(SCHEDULES_FILE, s);
 }
 
 /** Replaces {{path.to.key}} placeholders with values; arrays joined by ", "; missing → "". */

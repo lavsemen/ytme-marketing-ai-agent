@@ -6,6 +6,8 @@ export const CONFIG = {
   sourcesPath: 'packages/agent/src/config/sources.json',
   promptsPath: 'packages/agent/src/config/prompts.json',
   settingsPath: 'packages/agent/src/config/settings.json',
+  schedulesPath: 'packages/agent/src/config/schedules.json',
+  scheduledWorkflowFile: 'scheduled.yml',
   resultsIndexPath: 'out/results/index.json',
   branch: 'main',
 } as const;

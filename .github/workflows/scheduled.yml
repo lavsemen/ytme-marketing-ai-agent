@@ -1,0 +1,84 @@
+name: Run scheduled generations
+
+on:
+  schedule:
+    # Hourly. Each rule in packages/agent/src/config/schedules.json defines its
+    # own cron+tz; the agent runner picks rules whose previous tick falls in
+    # the current UTC hour window. GitHub schedule jitter is up to ~15 min,
+    # so checking once an hour is enough.
+    - cron: '0 * * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Run every enabled rule, ignoring the time window (manual test)'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
+
+# Avoid two scheduled workflows clashing on push to the same branch.
+concurrency:
+  group: scheduled-generations
+  cancel-in-progress: false
+
+jobs:
+  scheduled:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+
+      - name: Install deps
+        run: yarn install --frozen-lockfile
+
+      - name: Check required secrets
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "${ANTHROPIC_API_KEY}" ]; then
+            echo "::error::ANTHROPIC_API_KEY is missing or empty. Add it: Settings → Secrets and variables → Actions → New repository secret"
+            exit 1
+          fi
+
+      - name: Run scheduled rules
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || 'claude-sonnet-4-5' }}
+          TOUR_CLIENT_MODE: ${{ vars.TOUR_CLIENT_MODE || 'real' }}
+          YOUTRAVEL_API_BASE_URL: ${{ vars.YOUTRAVEL_API_BASE_URL || 'https://youtravel.me' }}
+          YOUTRAVEL_IMAGE_BASE_URL: ${{ vars.YOUTRAVEL_IMAGE_BASE_URL || 'https://youtravel.me/' }}
+          LANDING_BASE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+          LOG_LEVEL: info
+          FORCE_RUN: ${{ inputs.force }}
+        run: |
+          set -e
+          ARGS=(--run-id "${{ github.run_id }}")
+          if [ "${FORCE_RUN}" = "true" ]; then
+            ARGS+=(--force)
+          fi
+          yarn workspace @ytme/agent run-scheduled "${ARGS[@]}"
+
+      - name: Commit & push results
+        run: |
+          set -e
+          git config user.name  "youtravel-marketing-bot"
+          git config user.email "youtravel-marketing-bot@users.noreply.github.com"
+          git add landings out/results
+          if git diff --cached --quiet; then
+            echo "Nothing to commit."
+            exit 0
+          fi
+          git commit -m "ci: scheduled generation (run ${{ github.run_id }})"
+          git push origin HEAD:${{ github.ref_name }}
