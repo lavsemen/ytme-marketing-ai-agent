@@ -1,16 +1,13 @@
-import { useState, useMemo, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, Pencil, X, Check } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import {
   applySourceChange,
-  createGithubClient,
-  formatGithubApiError,
-  getSourcesFile,
+  loadSources,
   type SourceDto,
-} from '../api/github';
-import { useAuth } from '../hooks/useAuth';
+} from '../api/sources';
 
 const SourceFormSchema = z.object({
   id: z.string().min(1).regex(/^[a-z0-9-]+$/, 'kebab-case latin only'),
@@ -33,29 +30,18 @@ const DEFAULT_VALUES: SourceFormValues = {
 };
 
 export function SourcesPage(): ReactNode {
-  const { pat } = useAuth();
-  const client = useMemo(() => (pat ? createGithubClient(pat) : null), [pat]);
   const qc = useQueryClient();
 
   const query = useQuery({
     queryKey: ['sources'],
-    queryFn: async () => {
-      if (!client) throw new Error('no client');
-      return getSourcesFile(client);
-    },
-    enabled: !!client,
+    queryFn: () => loadSources(),
   });
 
   const saveMutation = useMutation({
-    mutationFn: async (
-      mutator: (current: SourceDto[]) => { next: SourceDto[]; message: string },
-    ) => {
-      if (!client) throw new Error('no client');
-      await applySourceChange(client, mutator);
-    },
+    mutationFn: (mutator: (current: SourceDto[]) => SourceDto[]) =>
+      applySourceChange(mutator),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['sources'] }),
-    // Even on error, force a refetch so the next attempt uses fresh sha/data
-    // (otherwise the user is stuck retrying with stale state).
+    // Re-fetch on error so the next attempt uses fresh state.
     onError: () => qc.invalidateQueries({ queryKey: ['sources'] }),
   });
 
@@ -80,10 +66,9 @@ export function SourcesPage(): ReactNode {
     const editingId = editing?.id ?? null;
     await saveMutation.mutateAsync((current) => {
       const now = new Date().toISOString();
-      let next: SourceDto[];
       if (editingId) {
         const existing = current.find((s) => s.id === editingId);
-        next = current.map((s) =>
+        return current.map((s) =>
           s.id === editingId
             ? {
                 ...values,
@@ -92,13 +77,11 @@ export function SourcesPage(): ReactNode {
               }
             : s,
         );
-        return { next, message: `admin: update source "${values.id}"` };
       }
       if (current.some((s) => s.id === values.id)) {
         throw new Error(`Source with id "${values.id}" already exists`);
       }
-      next = [...current, { ...values, createdAt: now, updatedAt: now }];
-      return { next, message: `admin: add source "${values.id}"` };
+      return [...current, { ...values, createdAt: now, updatedAt: now }];
     });
     setShowForm(false);
     setEditing(null);
@@ -106,24 +89,18 @@ export function SourcesPage(): ReactNode {
 
   async function handleDelete(s: SourceDto): Promise<void> {
     if (!confirm(`Удалить источник "${s.name}"?`)) return;
-    await saveMutation.mutateAsync((current) => ({
-      next: current.filter((x) => x.id !== s.id),
-      message: `admin: remove source "${s.id}"`,
-    }));
+    await saveMutation.mutateAsync((current) => current.filter((x) => x.id !== s.id));
   }
 
   async function handleToggle(s: SourceDto): Promise<void> {
     await saveMutation.mutateAsync((current) => {
       const existing = current.find((x) => x.id === s.id);
-      // If the record was removed externally between cache and now, no-op.
-      if (!existing) return { next: current, message: `admin: noop on "${s.id}"` };
-      const next = current.map((x) =>
-        x.id === s.id ? { ...x, enabled: !existing.enabled, updatedAt: new Date().toISOString() } : x,
+      if (!existing) return current;
+      return current.map((x) =>
+        x.id === s.id
+          ? { ...x, enabled: !existing.enabled, updatedAt: new Date().toISOString() }
+          : x,
       );
-      return {
-        next,
-        message: `admin: ${existing.enabled ? 'disable' : 'enable'} "${s.id}"`,
-      };
     });
   }
 
@@ -146,7 +123,7 @@ export function SourcesPage(): ReactNode {
             Источники <span className="text-lime">новостей</span>
           </h2>
           <p className="mt-1 text-sm text-ink-muted">
-            Все правки коммитятся в <code className="font-mono text-ink-secondary">main</code> через GitHub API.
+            Все правки сохраняются в Firestore (<code className="font-mono text-ink-secondary">config/sources</code>).
           </p>
         </div>
         <button type="button" onClick={openCreate} className="btn-primary" disabled={busy}>
@@ -247,7 +224,7 @@ export function SourcesPage(): ReactNode {
 
       {saveMutation.isError && (
         <div className="ds-notice ds-notice-danger">
-          Не удалось сохранить: {formatGithubApiError(saveMutation.error)}
+          Не удалось сохранить: {(saveMutation.error as Error)?.message ?? String(saveMutation.error)}
         </div>
       )}
     </div>

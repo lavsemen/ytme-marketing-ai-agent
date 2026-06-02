@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Play } from 'lucide-react';
@@ -6,9 +6,10 @@ import {
   createGithubClient,
   dispatchGenerate,
   formatGithubApiError,
-  getSourcesFile,
   listRecentRuns,
 } from '../api/github';
+import { GithubPatInput, resolveWorkflowPat } from '../components/GithubPatInput';
+import { loadSources } from '../api/sources';
 import { useAuth } from '../hooks/useAuth';
 
 const HINT_MAX_LENGTH = 800;
@@ -20,31 +21,31 @@ const HINT_EXAMPLES = [
 ];
 
 export function GeneratePage(): ReactNode {
-  const { pat } = useAuth();
-  const client = useMemo(() => (pat ? createGithubClient(pat) : null), [pat]);
+  const { pat, savePat } = useAuth();
   const navigate = useNavigate();
   const [sourceId, setSourceId] = useState<string>('all');
   const [hint, setHint] = useState<string>('');
+  const [patDraft, setPatDraft] = useState('');
+  const workflowPat = resolveWorkflowPat(pat, patDraft);
 
   const sourcesQuery = useQuery({
     queryKey: ['sources'],
-    queryFn: async () => {
-      if (!client) throw new Error('no client');
-      return getSourcesFile(client);
-    },
-    enabled: !!client,
+    queryFn: () => loadSources(),
   });
 
   const dispatchMutation = useMutation({
     mutationFn: async () => {
-      if (!client) throw new Error('no client');
+      const token = resolveWorkflowPat(pat, patDraft);
+      if (!token) throw new Error('Укажите GitHub PAT ниже — он нужен для запуска workflow.');
+      if (!pat && patDraft.trim()) savePat(patDraft.trim());
+      const gh = createGithubClient(token);
       const trimmedHint = hint.trim();
-      await dispatchGenerate(client, {
+      await dispatchGenerate(gh, {
         source: sourceId,
         ...(trimmedHint ? { hint: trimmedHint } : {}),
       });
       await new Promise((r) => setTimeout(r, 3000));
-      const runs = await listRecentRuns(client, 5);
+      const runs = await listRecentRuns(gh, 5);
       return runs[0]?.id ?? null;
     },
     onSuccess: (runId) => {
@@ -112,16 +113,36 @@ export function GeneratePage(): ReactNode {
           </div>
         </div>
 
+        <GithubPatInput
+          pat={pat}
+          onSave={(token) => {
+            savePat(token);
+            setPatDraft('');
+          }}
+          onDraftChange={setPatDraft}
+          compact
+        />
+
         <div className="pt-1">
           <button
             type="button"
-            disabled={dispatchMutation.isPending || enabledSources.length === 0 || hintTooLong}
+            disabled={
+              dispatchMutation.isPending ||
+              enabledSources.length === 0 ||
+              hintTooLong ||
+              !workflowPat
+            }
             onClick={() => dispatchMutation.mutate()}
             className="btn-primary btn-lg"
           >
             <Play size={16} />
             {dispatchMutation.isPending ? 'Запускаем…' : 'Запустить генерацию'}
           </button>
+          {!workflowPat && (
+            <p className="mt-3 text-sm text-warning">
+              Сохраните GitHub PAT выше или вставьте его перед запуском.
+            </p>
+          )}
           {enabledSources.length === 0 && (
             <p className="mt-3 text-sm text-warning">
               Нет включённых источников. Откройте «Источники» и включите хотя бы один.

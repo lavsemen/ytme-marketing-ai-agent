@@ -9,15 +9,13 @@ import {
   MONTH_RANGE_KEYS,
   MONTH_RANGE_LABELS,
   VOICE_LABELS,
-  loadSettingsFromRepo,
-  saveSettingsAtomic,
+  loadSettings,
+  saveSettings,
   type AgentSettingsDto,
   type BrandAudience,
   type BrandVoice,
   type MonthRangeKey,
 } from '../api/settings';
-import { useAuth } from '../hooks/useAuth';
-import { formatGithubApiError } from '../api/github';
 
 type TabId = 'pipeline' | 'llm' | 'brand' | 'geo' | 'season' | 'tours';
 
@@ -31,16 +29,11 @@ const TABS: { id: TabId; label: string }[] = [
 ];
 
 export function SettingsPage(): ReactNode {
-  const { pat } = useAuth();
   const qc = useQueryClient();
 
   const query = useQuery({
     queryKey: ['settings'],
-    queryFn: async () => {
-      if (!pat) throw new Error('no token');
-      return loadSettingsFromRepo(pat);
-    },
-    enabled: !!pat,
+    queryFn: () => loadSettings(),
   });
 
   const [draft, setDraft] = useState<AgentSettingsDto | null>(null);
@@ -56,17 +49,13 @@ export function SettingsPage(): ReactNode {
   }, [draft, query.data]);
 
   const saveMutation = useMutation({
-    mutationFn: async (args: { settings: AgentSettingsDto; message: string }) => {
-      if (!pat) throw new Error('no token');
-      await saveSettingsAtomic(pat, args.settings, args.message);
-    },
+    mutationFn: (settings: AgentSettingsDto) => saveSettings(settings),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['settings'] }),
     onError: () => qc.invalidateQueries({ queryKey: ['settings'] }),
   });
 
-  if (!pat) return <Notice tone="warn">Нужен PAT с правом Contents: Read and write.</Notice>;
   if (query.isLoading) return <div className="text-sm text-ink-muted">Загружаем настройки…</div>;
-  if (query.isError) return <Notice tone="error">Ошибка: {formatGithubApiError(query.error)}</Notice>;
+  if (query.isError) return <Notice tone="error">Ошибка: {errorMessage(query.error)}</Notice>;
   if (!draft) return null;
 
   function resetTab(): void {
@@ -99,10 +88,7 @@ export function SettingsPage(): ReactNode {
 
   async function handleSave(): Promise<void> {
     if (!query.data || !draft) return;
-    await saveMutation.mutateAsync({
-      settings: draft,
-      message: 'admin: update agent settings',
-    });
+    await saveMutation.mutateAsync(draft);
   }
 
   return (
@@ -113,9 +99,8 @@ export function SettingsPage(): ReactNode {
             <span className="text-lime">Настройки</span> агента
           </h2>
           <p className="mt-1 text-sm text-ink-muted">
-            Параметры пайплайна, LLM, бренда и фильтров. Коммитятся в{' '}
-            <code className="font-mono text-ink-secondary">packages/agent/src/config/settings.json</code> в ветку{' '}
-            <code className="font-mono text-ink-secondary">main</code>.
+            Параметры пайплайна, LLM, бренда и фильтров. Сохраняются в Firestore
+            (<code className="font-mono text-ink-secondary">config/settings</code>).
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -159,7 +144,7 @@ export function SettingsPage(): ReactNode {
 
       {saveMutation.isError && (
         <Notice tone="error">
-          Не удалось сохранить: {formatGithubApiError(saveMutation.error)}
+          Не удалось сохранить: {errorMessage(saveMutation.error)}
         </Notice>
       )}
 
@@ -612,4 +597,9 @@ function Notice({ tone, children }: { tone: 'info' | 'warn' | 'error'; children:
       <div className="flex-1">{children}</div>
     </div>
   );
+}
+
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return String(err);
 }

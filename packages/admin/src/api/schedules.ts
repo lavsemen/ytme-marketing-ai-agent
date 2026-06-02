@@ -1,11 +1,6 @@
-import { CONFIG } from '../lib/config';
-import {
-  commitJsonAtomic,
-  createGithubClient,
-  getFileContent,
-  putFileContent,
-  type JsonCommitResult,
-} from './github';
+import { getDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { getDb } from '../lib/firebase';
+import { refs } from './db';
 
 export const SCHEDULES_MAX_ENABLED = 10;
 
@@ -27,7 +22,6 @@ export interface SchedulesDto {
 
 export interface SchedulesFile {
   schedules: SchedulesDto;
-  sha: string | null;
 }
 
 export const DEFAULT_TZ = 'Europe/Moscow';
@@ -58,74 +52,48 @@ export const CRON_PRESETS: CronPreset[] = [
   { label: 'По понедельникам 09:00', cron: '0 9 * * 1', description: 'Раз в неделю' },
 ];
 
-export async function loadSchedulesFromRepo(token: string): Promise<SchedulesFile> {
-  const client = createGithubClient(token);
-  const file = await getFileContent(client, CONFIG.schedulesPath);
-  if (!file) {
-    return { schedules: { rules: [] }, sha: null };
-  }
-  try {
-    const parsed = JSON.parse(file.content) as Partial<SchedulesDto>;
-    const rules = Array.isArray(parsed.rules) ? parsed.rules : [];
-    return {
-      schedules: {
-        rules: rules.map((r) => ({
-          ...r,
-          tz: r.tz ?? DEFAULT_TZ,
-          enabled: Boolean(r.enabled),
-        })) as ScheduleRuleDto[],
-      },
-      sha: file.sha,
-    };
-  } catch (err) {
-    throw new Error(`schedules.json is not valid JSON: ${(err as Error).message}`);
-  }
+function normalizeRule(r: Partial<ScheduleRuleDto>): ScheduleRuleDto {
+  return {
+    ...r,
+    tz: r.tz ?? DEFAULT_TZ,
+    enabled: Boolean(r.enabled),
+  } as ScheduleRuleDto;
 }
 
-export async function saveSchedulesToRepo(
-  token: string,
-  schedules: SchedulesDto,
-  sha: string | null,
-  commitMessage: string,
-): Promise<void> {
-  const client = createGithubClient(token);
-  const json = JSON.stringify(schedules, null, 2) + '\n';
-  await putFileContent(client, {
-    path: CONFIG.schedulesPath,
-    content: json,
-    message: commitMessage,
-    ...(sha ? { sha } : {}),
-  });
+export async function loadSchedules(): Promise<SchedulesFile> {
+  const snap = await getDoc(refs.schedules());
+  if (!snap.exists()) return { schedules: { rules: [] } };
+  const data = snap.data() as Partial<SchedulesDto>;
+  const rules = Array.isArray(data.rules) ? data.rules : [];
+  return { schedules: { rules: rules.map(normalizeRule) } };
 }
 
 /**
- * Atomic update of schedules.json — always reads the latest sha and rules
- * from the repo before applying `mutator`. See `commitJsonAtomic` for
- * race-condition discussion.
+ * Mutator-style update — receives the fresh list from Firestore so callers
+ * can de-dupe by id and never overwrite concurrent edits silently.
  */
 export async function applyScheduleChange(
-  token: string,
-  mutator: (current: SchedulesDto) => JsonCommitResult<SchedulesDto>,
+  mutator: (current: SchedulesDto) => SchedulesDto,
 ): Promise<SchedulesDto> {
-  const client = createGithubClient(token);
-  const { next } = await commitJsonAtomic<SchedulesDto>(
-    client,
-    CONFIG.schedulesPath,
-    (raw) => {
-      const parsed = JSON.parse(raw) as Partial<SchedulesDto>;
-      const rules = Array.isArray(parsed.rules) ? parsed.rules : [];
-      return {
-        rules: rules.map((r) => ({
-          ...r,
-          tz: r.tz ?? DEFAULT_TZ,
-          enabled: Boolean(r.enabled),
-        })) as ScheduleRuleDto[],
-      };
-    },
-    () => ({ rules: [] }),
-    mutator,
-  );
-  return next;
+  let computed: SchedulesDto = { rules: [] };
+  await runTransaction(getDb(), async (t) => {
+    const ref = refs.schedules();
+    const snap = await t.get(ref);
+    const current: SchedulesDto = snap.exists()
+      ? {
+          rules: Array.isArray(snap.data()?.rules)
+            ? (snap.data()!.rules as ScheduleRuleDto[]).map(normalizeRule)
+            : [],
+        }
+      : { rules: [] };
+    const next = mutator(current);
+    computed = next;
+    t.set(ref, {
+      ...next,
+      updatedAt: serverTimestamp() as unknown as string,
+    });
+  });
+  return computed;
 }
 
 /**
@@ -135,6 +103,5 @@ export function newScheduleId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
   }
-  // Fallback: timestamp + random suffix
   return `r-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }

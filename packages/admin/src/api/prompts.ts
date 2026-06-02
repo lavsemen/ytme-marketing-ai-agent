@@ -1,11 +1,5 @@
-import type { Octokit } from '@octokit/rest';
-import { CONFIG } from '../lib/config';
-import {
-  commitJsonAtomic,
-  createGithubClient,
-  getFileContent,
-  putFileContent,
-} from './github';
+import { getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { refs } from './db';
 import defaultPromptsJson from '../data/default-prompts.json';
 
 export interface PromptsDto {
@@ -14,11 +8,14 @@ export interface PromptsDto {
   postGenerator: string;
   landingContent: string;
   factCheck: string;
+  /** Optional Firestore server timestamp (ISO string at read time). Never
+   *  set by the UI directly — populated by setDoc with serverTimestamp(). */
+  updatedAt?: string;
 }
 
 export const DEFAULT_PROMPTS: PromptsDto = defaultPromptsJson as PromptsDto;
 
-export type PromptKey = keyof PromptsDto;
+export type PromptKey = Exclude<keyof PromptsDto, 'updatedAt'>;
 
 export const PROMPT_KEYS: PromptKey[] = [
   'systemGuardrails',
@@ -46,73 +43,33 @@ export const PROMPT_HINTS: Record<PromptKey, string> = {
 
 export interface PromptsFile {
   prompts: PromptsDto;
-  sha: string | null;
 }
 
-export async function loadPromptsFromRepo(token: string): Promise<PromptsFile> {
-  const client = createGithubClient(token);
-  return loadPromptsWithClient(client);
-}
-
-async function loadPromptsWithClient(client: Octokit): Promise<PromptsFile> {
-  const file = await getFileContent(client, CONFIG.promptsPath);
-  if (!file) {
-    return {
-      prompts: emptyPrompts(),
-      sha: null,
-    };
+export async function loadPrompts(): Promise<PromptsFile> {
+  const snap = await getDoc(refs.prompts());
+  if (!snap.exists()) {
+    return { prompts: { ...DEFAULT_PROMPTS } };
   }
-  try {
-    const parsed = JSON.parse(file.content) as PromptsDto;
-    return { prompts: { ...emptyPrompts(), ...parsed }, sha: file.sha };
-  } catch (err) {
-    throw new Error(`prompts.json is not valid JSON: ${(err as Error).message}`);
-  }
+  return { prompts: normalizePrompts(snap.data() as Partial<PromptsDto>) };
 }
 
-export async function savePromptsToRepo(
-  token: string,
-  prompts: PromptsDto,
-  sha: string | null,
-  commitMessage: string,
-): Promise<void> {
-  const client = createGithubClient(token);
-  const json = JSON.stringify(prompts, null, 2) + '\n';
-  await putFileContent(client, {
-    path: CONFIG.promptsPath,
-    content: json,
-    message: commitMessage,
-    ...(sha ? { sha } : {}),
+/** Full-replace of config/prompts. Firestore is the source of truth. */
+export async function savePrompts(prompts: PromptsDto): Promise<PromptsDto> {
+  const normalized = normalizePrompts(prompts);
+  await setDoc(refs.prompts(), {
+    ...normalized,
+    updatedAt: serverTimestamp() as unknown as string,
   });
+  return normalized;
 }
 
-/**
- * Atomic full-replace of prompts.json. Re-reads the current file purely to
- * pick up the freshest sha (we do not merge fields — the admin UI is the
- * source of truth for the whole prompts object).
- */
-export async function savePromptsAtomic(
-  token: string,
-  prompts: PromptsDto,
-  commitMessage: string,
-): Promise<PromptsDto> {
-  const client = createGithubClient(token);
-  const { next } = await commitJsonAtomic<PromptsDto>(
-    client,
-    CONFIG.promptsPath,
-    (raw) => ({ ...emptyPrompts(), ...(JSON.parse(raw) as PromptsDto) }),
-    () => emptyPrompts(),
-    () => ({ next: prompts, message: commitMessage }),
-  );
-  return next;
-}
-
-function emptyPrompts(): PromptsDto {
-  return {
-    systemGuardrails: '',
-    newsAnalyzer: '',
-    postGenerator: '',
-    landingContent: '',
-    factCheck: '',
-  };
+function normalizePrompts(raw: Partial<PromptsDto>): PromptsDto {
+  const out = { ...DEFAULT_PROMPTS };
+  for (const key of PROMPT_KEYS) {
+    const val = raw[key];
+    if (typeof val === 'string' && val.trim()) {
+      out[key] = val.trim();
+    }
+  }
+  return out;
 }

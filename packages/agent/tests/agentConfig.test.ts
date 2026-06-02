@@ -62,8 +62,15 @@ describe('agentConfig', () => {
       expect(merged.factCheck).toBe(DEFAULT_PROMPTS.factCheck);
     });
 
-    it('rejects empty string', () => {
-      expect(() => mergePrompts(DEFAULT_PROMPTS, { postGenerator: '' })).toThrow();
+    it('ignores empty string overrides and keeps defaults', () => {
+      const merged = mergePrompts(DEFAULT_PROMPTS, {
+        postGenerator: '',
+        landingContent: '',
+        factCheck: '',
+      });
+      expect(merged.postGenerator).toBe(DEFAULT_PROMPTS.postGenerator);
+      expect(merged.landingContent).toBe(DEFAULT_PROMPTS.landingContent);
+      expect(merged.factCheck).toBe(DEFAULT_PROMPTS.factCheck);
     });
   });
 

@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { logger } from './utils/logger.js';
 import { runPipeline, loadSources } from './pipeline.js';
-import { listResults } from './modules/deploy/manifest.js';
+import { listResults } from './modules/deploy/persist.js';
 import { isRejected } from './types/result.js';
 import { loadSchedules } from './config/agentConfig.js';
 import { decideRulesToRun } from './modules/schedule/cronScheduler.js';
@@ -27,6 +27,7 @@ program
         ...(opts.source ? { sourceId: opts.source as string } : {}),
         ...(opts.runId ? { runId: opts.runId as string } : {}),
         ...(opts.hint ? { hint: opts.hint as string } : {}),
+        trigger: 'manual',
       });
 
       if (isRejected(result)) {
@@ -65,7 +66,7 @@ program
 
 program
   .command('list')
-  .description('List generated results')
+  .description('List generated results (latest 50 from Firestore)')
   .action(async () => {
     const results = await listResults();
     if (results.length === 0) {
@@ -73,8 +74,9 @@ program
       return;
     }
     for (const r of results) {
+      const status = r.status === 'rejected' ? '[rejected]' : '          ';
       process.stdout.write(
-        `${r.createdAt}  ${r.slug.padEnd(40)} ${r.country ?? '-'.padEnd(10)} tours:${r.toursCount}  ${r.landingUrl}\n`,
+        `${r.createdAt}  ${status} ${r.slug.padEnd(40)} ${(r.country ?? '-').padEnd(10)} tours:${r.toursCount}  ${r.landingUrl ?? '-'}\n`,
       );
     }
   });
@@ -139,6 +141,7 @@ program
           ...(sourceId ? { sourceId } : {}),
           ...(rule.hint ? { hint: rule.hint } : {}),
           runId,
+          trigger: 'scheduled',
         });
         if (isRejected(result)) {
           summary.push({

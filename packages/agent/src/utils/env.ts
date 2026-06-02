@@ -44,6 +44,24 @@ const EnvSchema = z.object({
     .default('https://example.github.io/ytme-marketing-ai-agent'),
 
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
+
+  // Firestore is the only backend. PROJECT_ID and SERVICE_ACCOUNT_JSON are
+  // required; see docs/firebase-setup.md.
+  FIREBASE_PROJECT_ID: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
+  FIREBASE_SERVICE_ACCOUNT_JSON: z.preprocess(
+    emptyToUndefined,
+    z.string().min(1).optional(),
+  ),
+  // Web SDK config for the embedded metrics tracker. Public-by-design values
+  // (apiKey is not a secret — see docs/firebase-setup.md). When any of them is
+  // missing the landing tracker silently no-ops.
+  FIREBASE_WEB_API_KEY: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
+  FIREBASE_WEB_AUTH_DOMAIN: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
+  FIREBASE_WEB_APP_ID: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
+
+  // Slack bot (News2Trip) — optional; see .env.example
+  SLACK_BOT_TOKEN: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
+  SLACK_CHANNEL_ID: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

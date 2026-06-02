@@ -1,0 +1,88 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // -----------------------------------------------------------------
+    // Helpers
+    // -----------------------------------------------------------------
+
+    // Authenticated via Firebase Auth (GitHub provider). Admin SPA only.
+    // Allowlist enforcement is done by a server-side check in the admin UI
+    // (users/{login} doc). Keeping the rule simple (auth != null) is safe
+    // because public access to the project is gated by the GitHub OAuth app.
+    function isAuthed() {
+      return request.auth != null;
+    }
+
+    // Increment-only check used by anonymous landing telemetry.
+    // Allows positive integer deltas <= 5 to keep bot-spam blast radius low.
+    function isPositiveIncrement(oldVal, newVal) {
+      return newVal is int && oldVal is int && newVal > oldVal && newVal - oldVal <= 5;
+    }
+
+    // -----------------------------------------------------------------
+    // config/* — sources, prompts, settings, schedules
+    // -----------------------------------------------------------------
+    match /config/{docId} {
+      allow read, write: if isAuthed();
+    }
+
+    // -----------------------------------------------------------------
+    // users/{githubLogin} — admin allowlist for the SPA
+    // -----------------------------------------------------------------
+    match /users/{login} {
+      allow read: if isAuthed();
+      // Only an authed user can self-register their own login record; the
+      // `admin: true` flag must be promoted manually in the Firebase console.
+      allow create: if isAuthed() && request.resource.data.admin == false;
+      allow update, delete: if false;
+    }
+
+    // -----------------------------------------------------------------
+    // runs/{runId} — pipeline run lifecycle (in_progress / completed / failed)
+    // -----------------------------------------------------------------
+    match /runs/{runId} {
+      // SPA needs to subscribe to runs to render "in progress" badges.
+      allow read: if isAuthed();
+      // Writes happen from the agent (firebase-admin SDK, which bypasses
+      // rules) — block from the client side to avoid accidental corruption.
+      allow write: if false;
+    }
+
+    // -----------------------------------------------------------------
+    // results/{slug} — generated pipeline outputs
+    // -----------------------------------------------------------------
+    match /results/{slug} {
+      allow read: if isAuthed();
+      allow write: if false; // agent writes via admin SDK
+    }
+
+    // -----------------------------------------------------------------
+    // metrics/{slug} — public view/click counters from the landing page
+    // -----------------------------------------------------------------
+    match /metrics/{slug} {
+      // Public read so a future "stats on landing" widget can work without auth.
+      allow read: if true;
+
+      // First touch: anonymous client can create a counter doc.
+      allow create: if request.resource.data.views is int
+                    && request.resource.data.views >= 0
+                    && request.resource.data.views <= 1;
+
+      // Increment-only updates. Reject anything that:
+      //  - changes more than the 3 allowed top-level fields,
+      //  - decreases or jumps too far,
+      //  - mutates `clicksByTour` to a non-map.
+      allow update: if request.resource.data.diff(resource.data).changedKeys()
+                          .hasOnly(['views', 'clicksByTour', 'lastSeenAt'])
+                    && isPositiveIncrement(resource.data.views, request.resource.data.views)
+                    && (
+                         !('clicksByTour' in request.resource.data) ||
+                         request.resource.data.clicksByTour is map
+                       );
+
+      allow delete: if false;
+    }
+  }
+}

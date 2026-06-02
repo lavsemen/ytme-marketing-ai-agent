@@ -8,7 +8,7 @@ import {
   type RejectedResultJson,
   type ResultMetaJson,
 } from '../api/results';
-import { useAuth } from '../hooks/useAuth';
+import { MetricsCard } from '../components/MetricsCard';
 import type { ReactNode } from 'react';
 
 function MetaContext({ meta }: { meta: ResultMetaJson }): ReactNode {
@@ -164,10 +164,9 @@ function RejectedView({ data }: { data: RejectedResultJson }): ReactNode {
 
 export function ResultDetailPage(): ReactNode {
   const { slug } = useParams<{ slug: string }>();
-  const { pat } = useAuth();
   const query = useQuery({
-    queryKey: ['result', slug, pat ? 'repo' : 'pages'],
-    queryFn: async () => (slug ? fetchResult(pat, slug) : null),
+    queryKey: ['result', slug],
+    queryFn: () => (slug ? fetchResult(slug) : null),
     enabled: !!slug,
   });
 
@@ -178,7 +177,7 @@ export function ResultDetailPage(): ReactNode {
   if (!data) {
     return (
       <div className="ds-notice ds-notice-warning">
-        Результат не найден в репозитории. Если генерация только что завершилась — обновите через минуту.
+        Результат не найден в Firestore. Если генерация только что завершилась — обновите через минуту.
       </div>
     );
   }
@@ -210,6 +209,11 @@ export function ResultDetailPage(): ReactNode {
       </section>
 
       <MetaContext meta={data.meta} />
+
+      <MetricsCard
+        slug={data.landing.slug}
+        tourTitleById={Object.fromEntries(data.tours.map((t) => [t.id, t.title]))}
+      />
 
       <section className="grid gap-6 md:grid-cols-2">
         <div className="ds-card">

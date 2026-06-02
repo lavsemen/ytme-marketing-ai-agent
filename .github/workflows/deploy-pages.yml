@@ -3,6 +3,13 @@ name: Deploy to GitHub Pages
 # FIRST-TIME SETUP (required once, in GitHub UI):
 # Repo → Settings → Pages → Build and deployment → Source: "GitHub Actions"
 # Without this, "Setup Pages" fails with: Get Pages site failed (404)
+#
+# Firebase Web config for the admin SPA build (Repository → Settings → Variables):
+#   FIREBASE_WEB_API_KEY      — apiKey from Firebase Console → Web app (starts with AIza)
+#   FIREBASE_WEB_AUTH_DOMAIN  — e.g. ytme-news2trip.firebaseapp.com
+#   FIREBASE_PROJECT_ID       — e.g. ytme-news2trip
+#   FIREBASE_WEB_APP_ID       — appId from Web app config
+# Aliases VITE_FIREBASE_* are also accepted if you named variables that way.
 
 on:
   push:
@@ -10,11 +17,11 @@ on:
     paths:
       - 'packages/admin/**'
       - 'landings/**'
-      - 'out/results/**'
       - '.github/workflows/deploy-pages.yml'
   workflow_dispatch:
   workflow_run:
-    workflows: ['Generate landing']
+    # Both pipelines push landings; deploy-pages picks the updated files.
+    workflows: ['Generate landing', 'Run scheduled generations']
     types: [completed]
     branches: [main]
 
@@ -55,17 +62,80 @@ jobs:
       - name: Install deps
         run: yarn install --frozen-lockfile
 
-      - name: Configure admin env
+      - name: Resolve Firebase web config
+        id: fb
+        env:
+          FB_API_KEY: ${{ vars.FIREBASE_WEB_API_KEY || vars.VITE_FIREBASE_API_KEY }}
+          FB_AUTH_DOMAIN: ${{ vars.FIREBASE_WEB_AUTH_DOMAIN || vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          FB_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID || vars.VITE_FIREBASE_PROJECT_ID }}
+          FB_APP_ID: ${{ vars.FIREBASE_WEB_APP_ID || vars.VITE_FIREBASE_APP_ID }}
         run: |
-          cat > packages/admin/.env.production <<EOF
-          VITE_REPO_OWNER=${{ github.repository_owner }}
-          VITE_REPO_NAME=${{ github.event.repository.name }}
-          VITE_GENERATE_WORKFLOW_FILE=generate.yml
-          VITE_LANDING_BASE_URL=https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
-          EOF
+          set -e
+          missing=""
+          for name in FB_API_KEY FB_AUTH_DOMAIN FB_PROJECT_ID FB_APP_ID; do
+            eval "val=\${$name}"
+            if [ -z "$val" ]; then
+              missing="$missing ${name#FB_}"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing GitHub Variables:$missing"
+            echo "Set FIREBASE_WEB_API_KEY, FIREBASE_WEB_AUTH_DOMAIN, FIREBASE_PROJECT_ID, FIREBASE_WEB_APP_ID"
+            echo "(or the same names with VITE_FIREBASE_ prefix) in Settings → Secrets and variables → Actions → Variables"
+            exit 1
+          fi
+          case "$FB_API_KEY" in
+            AIza*) ;;
+            *)
+              echo "::error::FIREBASE_WEB_API_KEY must start with AIza (Firebase Web API key, not service account JSON)"
+              exit 1
+              ;;
+          esac
+          echo "api_key_prefix=${FB_API_KEY:0:8}…" >> "$GITHUB_OUTPUT"
+          echo "project_id=$FB_PROJECT_ID" >> "$GITHUB_OUTPUT"
+          {
+            echo "VITE_REPO_OWNER=${{ github.repository_owner }}"
+            echo "VITE_REPO_NAME=${{ github.event.repository.name }}"
+            echo "VITE_GENERATE_WORKFLOW_FILE=generate.yml"
+            echo "VITE_LANDING_BASE_URL=https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+            echo "VITE_FIREBASE_API_KEY=$FB_API_KEY"
+            echo "VITE_FIREBASE_AUTH_DOMAIN=$FB_AUTH_DOMAIN"
+            echo "VITE_FIREBASE_PROJECT_ID=$FB_PROJECT_ID"
+            echo "VITE_FIREBASE_APP_ID=$FB_APP_ID"
+          } | tee .env.production > packages/admin/.env.production
+          echo "Firebase config ready (api key prefix: ${FB_API_KEY:0:8}…, project: $FB_PROJECT_ID)"
 
       - name: Build admin SPA
+        env:
+          VITE_REPO_OWNER: ${{ github.repository_owner }}
+          VITE_REPO_NAME: ${{ github.event.repository.name }}
+          VITE_GENERATE_WORKFLOW_FILE: generate.yml
+          VITE_LANDING_BASE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+          VITE_FIREBASE_API_KEY: ${{ vars.FIREBASE_WEB_API_KEY || vars.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.FIREBASE_WEB_AUTH_DOMAIN || vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID || vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.FIREBASE_WEB_APP_ID || vars.VITE_FIREBASE_APP_ID }}
         run: yarn workspace @ytme/admin build
+
+      - name: Verify Firebase config in bundle
+        env:
+          EXPECT_PROJECT_ID: ${{ steps.fb.outputs.project_id }}
+        run: |
+          set -e
+          bundle=$(ls packages/admin/dist/assets/index-*.js | head -1)
+          if [ -z "$bundle" ]; then
+            echo "::error::Admin bundle not found"
+            exit 1
+          fi
+          if ! grep -qF "$EXPECT_PROJECT_ID" "$bundle"; then
+            echo "::error::Project id '$EXPECT_PROJECT_ID' not found in $bundle — Vite did not bake Firebase env"
+            exit 1
+          fi
+          if grep -qE 'apiKey:""' "$bundle" || grep -qE "apiKey:''" "$bundle"; then
+            echo "::error::Empty Firebase apiKey in built bundle"
+            exit 1
+          fi
+          echo "OK: Firebase project id present in $(basename "$bundle")"
 
       - name: Assemble Pages artifact
         run: |
@@ -76,13 +146,6 @@ jobs:
           if [ -d landings ]; then
             mkdir -p dist/landings
             cp -r landings/. dist/landings/
-          fi
-          if [ -d out/results ]; then
-            mkdir -p dist/results
-            cp -r out/results/. dist/results/
-          else
-            mkdir -p dist/results
-            echo "[]" > dist/results/index.json
           fi
           # SPA fallback for client-side router (404.html points back to the SPA)
           cp dist/index.html dist/404.html

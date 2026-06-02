@@ -10,10 +10,10 @@ MVP-сервис из двух частей:
 ## Pipeline
 
 ```
-sources.json → fetch news → analyze (Claude) → pick top insight
+Firestore config/sources → fetch news → analyze (Claude) → pick top insight
             → search tours (YouTravel API) → rank → generate post (Claude)
-            → generate landing → save out/results/{slug}.json
-            → commit → push → GitHub Pages
+            → generate landing → write results/{slug} & metrics/{slug} (Firestore)
+            → commit landing HTML → push → GitHub Pages
 ```
 
 ## Требования
@@ -30,20 +30,21 @@ ytme-marketing-ai-agent/
 ├── packages/
 │   ├── agent/                  # CLI + pipeline
 │   │   ├── src/
-│   │   │   ├── config/sources.json
+│   │   │   ├── config/         # defaults (читаются для миграции и как fallback)
+│   │   │   ├── db/firestore.ts # firebase-admin singleton
 │   │   │   ├── modules/{news, ai, tours, landing, deploy}/
-│   │   │   ├── types/
-│   │   │   ├── utils/
+│   │   │   ├── tools/migrate-to-firestore.ts
 │   │   │   ├── pipeline.ts
 │   │   │   └── cli.ts
 │   │   └── tests/
 │   └── admin/                  # React SPA
 │       └── src/{pages, components, api, hooks, lib}/
+├── infra/firebase/             # firestore.rules + firestore.indexes.json
 ├── landings/{slug}/            # сгенерированные лендинги (HTML/CSS/JS)
-├── out/results/                # JSON-результаты + index.json
 └── .github/workflows/
     ├── generate.yml            # workflow_dispatch → запускает агент
-    └── deploy-pages.yml        # push в main → деплой на GH Pages
+    ├── scheduled.yml           # cron каждый час → агент по расписанию
+    └── deploy-pages.yml        # push в main / после генерации → деплой SPA + landings
 ```
 
 ## Локальная установка
@@ -74,7 +75,7 @@ yarn list
 yarn test
 ```
 
-Сгенерированные файлы появятся в `landings/{slug}/` и `out/results/{slug}.json`.
+Сгенерированный лендинг появится в `landings/{slug}/`. Метаданные результата сохраняются в Firestore `results/{slug}`.
 
 ## Локальный запуск админки
 
@@ -84,15 +85,16 @@ yarn admin:dev
 
 При `yarn admin:dev` **owner/repo** подставляются из `git remote origin` (если не заданы в `.env`). Запросы к GitHub API идут через dev-прокси `/api/github` (без CORS).
 
-Опционально:
+Переменные админки (`VITE_*`, включая Firebase) читаются из **корневого** `.env` / `.env.local`. После изменения env перезапустите dev-сервер.
 
 ```bash
-cp packages/admin/.env.example packages/admin/.env.local
-# VITE_REPO_OWNER=ваш-github-login
-# VITE_REPO_NAME=ytme-marketing-ai-agent
+cp .env.example .env
+# Заполните VITE_FIREBASE_* (см. docs/firebase-setup.md)
 ```
 
-Открыть [http://localhost:5173](http://localhost:5173) → ввести GitHub PAT.
+Опционально: переопределения можно положить в `packages/admin/.env.local` — они имеют приоритет над корневым файлом.
+
+Открыть [http://localhost:5173](http://localhost:5173) → войти через GitHub OAuth (Firebase должен быть настроен, см. [docs/firebase-setup.md](docs/firebase-setup.md)). PAT задаётся отдельно при необходимости запускать workflow.
 
 ## Настройка GitHub-репозитория
 
@@ -140,39 +142,55 @@ Get Pages site failed (404)
 
 `Settings → Actions → General → Workflow permissions = "Read and write"`.
 
+### 5. Firestore — основное хранилище
+
+Конфиги (`sources`, `prompts`, `settings`, `schedules`), история запусков, результаты пайплайна и метрики лендингов живут в Firebase Firestore. Git хранит только код и статические лендинги. Без настроенного Firebase агент и админка не запустятся.
+
+Полный гайд: [docs/firebase-setup.md](docs/firebase-setup.md). Минимум:
+
+1. Создать Firebase-проект → включить Firestore (native) и Authentication → GitHub provider.
+2. Скачать service-account JSON и положить в GitHub Secret `FIREBASE_SERVICE_ACCOUNT_JSON`.
+3. В `Settings → Variables` задать `FIREBASE_PROJECT_ID`, web-конфиг (`FIREBASE_WEB_API_KEY`, `FIREBASE_WEB_AUTH_DOMAIN`, `FIREBASE_WEB_APP_ID`).
+4. Деплой rules и индексов: `firebase deploy --only firestore` (файлы в `infra/firebase/`).
+5. (Опционально) Одноразовая миграция исторических JSON-данных:
+   ```bash
+   FIREBASE_PROJECT_ID=... \
+   FIREBASE_SERVICE_ACCOUNT_JSON='<json>' \
+   yarn workspace @ytme/agent migrate-firestore
+   ```
+
 ## Использование через UI
 
 1. Откройте `https://<owner>.github.io/<repo>/`.
-2. Введите GitHub Personal Access Token (см. ниже).
+2. Залогиньтесь через GitHub OAuth. Первый раз — попросите администратора в Firebase Console → Firestore → `users/<login>` поставить `admin: true`.
 3. На вкладке **Источники** добавьте/выключите новостные URL.
-4. На вкладке **Запустить** выберите источник и нажмите «Запустить генерацию».
+4. На вкладке **Запустить** выберите источник и нажмите «Запустить генерацию» (для запуска workflow один раз сохраните GitHub PAT во вкладке Login → «Дополнительно»).
 5. Дождитесь завершения workflow (~1 минута) на вкладке статуса.
-6. Откройте **Историю** — там появится новый результат с превью лендинга.
+6. Откройте **Историю** — там появится новый результат с превью лендинга (обновляется в реальном времени через Firestore).
 
-### Как получить GitHub PAT (fine-grained)
+### Как получить GitHub PAT (опционально — только для запуска workflow)
+
+Аутентификация в админке идёт через Firebase GitHub OAuth, но **запуск** workflow с кнопки «Запустить генерацию» / «Запустить сейчас» требует PAT с правом `Actions: write`, так как OAuth-scope сюда не входит.
 
 1. [github.com/settings/personal-access-tokens/new](https://github.com/settings/personal-access-tokens/new)
 2. **Resource owner**: ваш аккаунт.
 3. **Repository access**: «Only select repositories» → этот репо.
 4. **Permissions → Repository permissions**:
-   - `Contents`: **Read and write**
    - `Actions`: **Read and write**
    - `Metadata`: **Read-only** (выставляется автоматически)
-5. Создайте, скопируйте, вставьте в форму логина админки.
-
-**Важно:** для кнопки «Запустить генерацию» нужен именно **Actions: Read and write**. Если указать только Read, появится ошибка `Resource not accessible by personal access token`.
+5. Создайте, скопируйте, вставьте в админке: Login → «Дополнительно: задать PAT».
 
 **Альтернатива — Classic PAT:** [создать](https://github.com/settings/tokens/new?scopes=repo,workflow) со scopes `repo` + `workflow`.
 
-PAT хранится только в `localStorage` вашего браузера. На сервер админки (которого нет) не уходит.
+PAT хранится только в `localStorage` вашего браузера.
 
 ## Деплой
 
 Деплой полностью автоматический:
 
-- **При коммите в `main`** (любым способом — через UI или вручную) пайплайн `deploy-pages.yml` собирает SPA + копирует `landings/` и `out/results/` в Pages-артефакт и публикует.
-- **После успешного `generate.yml`** тоже запускается `deploy-pages.yml` (чтобы `/results/index.json` на Pages совпадал с репозиторием).
-- **История в админке** читает `out/results/index.json` из **GitHub API** (ветка `main`), а не только с Pages — список актуален сразу после коммита генерации.
+- **При коммите в `main`** (любым способом — через UI или вручную) пайплайн `deploy-pages.yml` собирает SPA + копирует `landings/` в Pages-артефакт и публикует.
+- **После успешного `generate.yml` / `scheduled.yml`** тоже запускается `deploy-pages.yml`, чтобы новые HTML-лендинги уехали в Pages.
+- **История в админке** подписывается на Firestore `results` через `onSnapshot` — список обновляется в реальном времени без перезагрузки.
 
 ## Расширение
 
@@ -243,13 +261,13 @@ TOUR_CLIENT_MODE=mock yarn generate
 | `401 authentication_error` / Invalid credentials | В `.env` и GitHub Secret — **ваш** ключ Anthropic, не копия из `.env.example`; создайте новый в Console |
 | `seasonality` Expected string, received null | Обновите код на `main` (схема принимает null от LLM). Не связано с env |
 | Запуск помечен «Пропущен» в Истории | Это не ошибка: пайплайн отказался публиковать слабый пост. Откройте детали — внутри причина (`low_confidence`, `unknown_country`, `no_tours`, `no_news`, `llm_error`) и подсказки. Workflow завершается успешно (exit 0). |
-| `Source with id "X" not found` | Проверьте `packages/agent/src/config/sources.json` |
-| `HTTP 404` для `atorus` | Старый URL `.../new.html` снят с сайта; в `sources.json` должен быть `https://www.atorus.ru/news/rss.xml`, тип `rss` |
-| Admin не показывает историю | Pages-артефакт ещё кэшируется — обновите страницу через минуту |
+| `Source with id "X" not found` | Откройте админку → «Источники» и убедитесь, что нужный id есть в Firestore (`config/sources`) |
+| `HTTP 404` для `atorus` | Старый URL `.../new.html` снят с сайта; в источниках должен быть `https://www.atorus.ru/news/rss.xml`, тип `rss` |
+| Admin не показывает историю | Проверьте: 1) Firestore настроен, 2) у пользователя `users/<login>.admin = true`, 3) индексы задеплоены (`firebase deploy --only firestore`) |
 | Workflow «Workflow does not have write permissions» | Включите `Settings → Actions → General → Workflow permissions = Read and write` |
 | `Get Pages site failed` / `configure-pages` 404 | `Settings → Pages → Source = GitHub Actions`, затем перезапустите workflow |
 | `Resource not accessible` при запуске из UI | PAT: **Actions → Read and write** (fine-grained) или Classic: `repo` + `workflow` |
-| CORS / `api.github.com/repos///` локально | Пустые `VITE_REPO_*` — перезапустите `yarn admin:dev` (подхват git remote) или задайте `.env.local`; API проксируется через Vite |
+| CORS / `api.github.com/repos///` локально | Пустые `VITE_REPO_*` — перезапустите `yarn admin:dev` (подхват git remote) или задайте в корневом `.env.local`; API проксируется через Vite |
 | YouTravel API возвращает 0 туров | Проверьте лог `YouTravel SERP request`; клиент сделает fallback на client-side фильтр |
 
 ## Лицензия

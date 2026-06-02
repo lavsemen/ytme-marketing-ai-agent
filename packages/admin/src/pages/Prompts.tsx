@@ -3,16 +3,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { RotateCcw, Save, AlertTriangle } from 'lucide-react';
 import {
   DEFAULT_PROMPTS,
-  loadPromptsFromRepo,
-  savePromptsAtomic,
+  loadPrompts,
+  savePrompts,
   type PromptKey,
   type PromptsDto,
   PROMPT_HINTS,
   PROMPT_KEYS,
   PROMPT_LABELS,
 } from '../api/prompts';
-import { useAuth } from '../hooks/useAuth';
-import { formatGithubApiError } from '../api/github';
 
 const PLACEHOLDER_HELP = [
   '{{brand.name}}, {{brand.voice}}, {{brand.defaultAudience}}',
@@ -21,16 +19,11 @@ const PLACEHOLDER_HELP = [
 ];
 
 export function PromptsPage(): ReactNode {
-  const { pat } = useAuth();
   const qc = useQueryClient();
 
   const query = useQuery({
     queryKey: ['prompts'],
-    queryFn: async () => {
-      if (!pat) throw new Error('no token');
-      return loadPromptsFromRepo(pat);
-    },
-    enabled: !!pat,
+    queryFn: () => loadPrompts(),
   });
 
   const [draft, setDraft] = useState<PromptsDto | null>(null);
@@ -40,12 +33,7 @@ export function PromptsPage(): ReactNode {
   }, [query.data]);
 
   const saveMutation = useMutation({
-    mutationFn: async (args: { prompts: PromptsDto; message: string }) => {
-      if (!pat) throw new Error('no token');
-      // Atomic save always refetches the current sha right before commit,
-      // so concurrent edits or external commits don't 409.
-      await savePromptsAtomic(pat, args.prompts, args.message);
-    },
+    mutationFn: (prompts: PromptsDto) => savePrompts(prompts),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['prompts'] }),
     onError: () => qc.invalidateQueries({ queryKey: ['prompts'] }),
   });
@@ -55,12 +43,9 @@ export function PromptsPage(): ReactNode {
     return PROMPT_KEYS.some((k) => draft[k] !== query.data!.prompts[k]);
   }, [draft, query.data]);
 
-  if (!pat) {
-    return <Notice tone="warn">Нужен PAT с правом Contents: Read and write.</Notice>;
-  }
   if (query.isLoading) return <div className="text-sm text-ink-muted">Загружаем промпты…</div>;
   if (query.isError) {
-    return <Notice tone="error">Ошибка: {formatGithubApiError(query.error)}</Notice>;
+    return <Notice tone="error">Ошибка: {errorMessage(query.error)}</Notice>;
   }
   if (!draft) return null;
 
@@ -78,10 +63,7 @@ export function PromptsPage(): ReactNode {
 
   async function handleSave(): Promise<void> {
     if (!query.data || !draft) return;
-    await saveMutation.mutateAsync({
-      prompts: draft,
-      message: 'admin: update agent prompts',
-    });
+    await saveMutation.mutateAsync(draft);
   }
 
   return (
@@ -92,9 +74,8 @@ export function PromptsPage(): ReactNode {
             <span className="text-lime">Промпты</span> LLM
           </h2>
           <p className="mt-1 text-sm text-ink-muted">
-            Сохранение коммитит{' '}
-            <code className="font-mono text-ink-secondary">packages/agent/src/config/prompts.json</code> в ветку{' '}
-            <code className="font-mono text-ink-secondary">main</code>.
+            Сохранение пишет в Firestore (<code className="font-mono text-ink-secondary">config/prompts</code>). Применяется в
+            следующей генерации.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -133,7 +114,7 @@ export function PromptsPage(): ReactNode {
       </Notice>
 
       {saveMutation.isError && (
-        <Notice tone="error">Не удалось сохранить: {formatGithubApiError(saveMutation.error)}</Notice>
+        <Notice tone="error">Не удалось сохранить: {errorMessage(saveMutation.error)}</Notice>
       )}
 
       <div className="space-y-4">
@@ -201,4 +182,9 @@ function Notice({ tone, children }: { tone: 'info' | 'warn' | 'error'; children:
       <div className="flex-1">{children}</div>
     </div>
   );
+}
+
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return String(err);
 }

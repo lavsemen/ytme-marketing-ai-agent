@@ -14,7 +14,7 @@ import { useAuth } from './hooks/useAuth';
 import { repoConfigError } from './lib/config';
 
 function RequireAuth({ children }: { children: ReactNode }): ReactNode {
-  const { pat, user, loading } = useAuth();
+  const { user, loading, firebaseUser, isAdmin } = useAuth();
   const location = useLocation();
   const repoError = repoConfigError();
 
@@ -31,15 +31,35 @@ function RequireAuth({ children }: { children: ReactNode }): ReactNode {
     );
   }
 
-  if (!pat) return <Navigate to="/login" state={{ from: location }} replace />;
-  if (loading && !user) {
-    return <div className="p-8 text-center text-sm text-ink-muted">Проверяем токен…</div>;
+  if (loading && !firebaseUser) {
+    return <div className="p-8 text-center text-sm text-ink-muted">Проверяем сессию…</div>;
+  }
+
+  if (!firebaseUser) return <Navigate to="/login" state={{ from: location }} replace />;
+  if (isAdmin === null) {
+    return <div className="p-8 text-center text-sm text-ink-muted">Проверяем доступ…</div>;
+  }
+  if (isAdmin === false) {
+    return (
+      <div className="mx-auto max-w-lg p-8">
+        <div className="ds-notice ds-notice-warning">
+          <div>
+            <p className="font-bold uppercase tracking-wider text-xxs">Доступ ожидает подтверждения</p>
+            <p className="mt-2 text-sm">
+              Аккаунт <code className="font-mono">{user?.login ?? firebaseUser.email ?? firebaseUser.uid}</code>{' '}
+              ещё не отмечен как admin. Откройте Firebase Console → Firestore → users/{'{'}login{'}'} и
+              поставьте <code className="font-mono">admin: true</code>.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
   }
   return <>{children}</>;
 }
 
 export default function App(): ReactNode {
-  const { user, logout, warnings } = useAuth();
+  const { user, logout } = useAuth();
 
   return (
     <Routes>
@@ -47,7 +67,7 @@ export default function App(): ReactNode {
       <Route
         element={
           <RequireAuth>
-            {user ? <Layout user={user} onLogout={logout} warnings={warnings} /> : null}
+            {user ? <Layout user={user} onLogout={logout} warnings={[]} /> : null}
           </RequireAuth>
         }
       >

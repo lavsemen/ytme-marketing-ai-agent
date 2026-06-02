@@ -1,5 +1,14 @@
+import {
+  collection,
+  getDoc,
+  getDocs,
+  limit,
+  orderBy,
+  query,
+} from 'firebase/firestore';
 import { CONFIG } from '../lib/config';
-import { createGithubClient, getFileContent } from './github';
+import { getDb } from '../lib/firebase';
+import { refs } from './db';
 
 export type ResultStatus = 'success' | 'rejected';
 
@@ -107,7 +116,7 @@ export const REJECTION_REASON_LABELS: Record<RejectionReason, string> = {
   llm_error: 'Ошибка LLM',
 };
 
-/** Public landing URL from slug (ignores stale landingUrl saved in index.json). */
+/** Public landing URL from slug (ignores stale landingUrl saved in Firestore). */
 export function publicLandingUrl(slug: string, fallback?: string): string {
   if (CONFIG.landingBaseUrl) {
     return `${CONFIG.landingBaseUrl}/landings/${encodeURIComponent(slug)}/`;
@@ -127,93 +136,56 @@ function normalizeMeta(entry: ResultMeta): ResultMeta {
   };
 }
 
-function cacheBust(url: string): string {
-  const sep = url.includes('?') ? '&' : '?';
-  return `${url}${sep}t=${Date.now()}`;
+/**
+ * One-shot fetch of the most recent 200 results. The History page uses
+ * an onSnapshot subscription instead (see useFirestoreHistory) — this is
+ * kept for non-realtime callers and tests.
+ */
+export async function fetchResultsIndex(): Promise<ResultMeta[]> {
+  const q = query(collection(getDb(), 'results'), orderBy('createdAt', 'desc'), limit(200));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => normalizeMeta(docToResultMeta(d.data() as ResultDocLike, d.id)));
 }
 
-/** GitHub Contents API — always matches branch main in the repo (not stale Pages). */
-export async function fetchResultsIndexFromRepo(token: string): Promise<ResultMeta[]> {
-  const client = createGithubClient(token);
-  const file = await getFileContent(client, CONFIG.resultsIndexPath);
-  if (!file) return [];
-  try {
-    const parsed = JSON.parse(file.content) as ResultMeta[];
-    if (!Array.isArray(parsed)) return [];
-    return parsed.map(normalizeMeta);
-  } catch {
-    return [];
+export async function fetchResult(slug: string): Promise<ResultJson | null> {
+  const snap = await getDoc(refs.result(slug));
+  if (!snap.exists()) return null;
+  const data = snap.data() as ResultDocLike;
+  const body = data.body;
+  if (!body) return null;
+  if (isSuccessResult(body) && body.landing?.slug) {
+    body.landing.url = publicLandingUrl(body.landing.slug, body.landing.url);
+    body.post.landingUrl = body.landing.url;
   }
+  return body;
 }
 
-export async function fetchResultFromRepo(
-  token: string,
-  slug: string,
-): Promise<ResultJson | null> {
-  const client = createGithubClient(token);
-  const file = await getFileContent(client, `out/results/${encodeURIComponent(slug)}.json`);
-  if (!file) return null;
-  try {
-    const data = JSON.parse(file.content) as ResultJson;
-    if (isSuccessResult(data) && data.landing?.slug) {
-      data.landing.url = publicLandingUrl(data.landing.slug, data.landing.url);
-      data.post.landingUrl = data.landing.url;
-    }
-    return data;
-  } catch {
-    return null;
-  }
+interface ResultDocLike {
+  slug?: string;
+  status?: ResultStatus;
+  createdAt?: string;
+  newsTitle?: string;
+  country?: string | null;
+  toursCount?: number;
+  landingUrl?: string | null;
+  rejectionReason?: RejectionReason | null;
+  rejectionMessage?: string | null;
+  body?: ResultJson;
 }
 
-/** Static copy on GitHub Pages — can lag behind main until deploy-pages runs. */
-export async function fetchResultsIndexFromPages(): Promise<ResultMeta[]> {
-  const base = CONFIG.landingBaseUrl || '';
-  if (!base) return [];
-  const url = cacheBust(`${base}/results/index.json`);
-  try {
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) return [];
-    const parsed = (await res.json()) as ResultMeta[];
-    return parsed.map(normalizeMeta);
-  } catch {
-    return [];
-  }
+function docToResultMeta(data: ResultDocLike, fallbackSlug: string): ResultMeta {
+  return {
+    slug: data.slug ?? fallbackSlug,
+    createdAt: data.createdAt ?? new Date().toISOString(),
+    newsTitle: data.newsTitle ?? '',
+    ...(data.country ? { country: data.country } : {}),
+    toursCount: data.toursCount ?? 0,
+    ...(data.landingUrl ? { landingUrl: data.landingUrl } : {}),
+    status: data.status ?? 'success',
+    ...(data.rejectionReason ? { rejectionReason: data.rejectionReason } : {}),
+    ...(data.rejectionMessage ? { rejectionMessage: data.rejectionMessage } : {}),
+  };
 }
 
-export async function fetchResultFromPages(slug: string): Promise<ResultJson | null> {
-  const base = CONFIG.landingBaseUrl || '';
-  if (!base) return null;
-  const url = cacheBust(`${base}/results/${encodeURIComponent(slug)}.json`);
-  try {
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) return null;
-    const data = (await res.json()) as ResultJson;
-    if (isSuccessResult(data) && data.landing?.slug) {
-      data.landing.url = publicLandingUrl(data.landing.slug, data.landing.url);
-      data.post.landingUrl = data.landing.url;
-    }
-    return data;
-  } catch {
-    return null;
-  }
-}
-
-/** Prefer repo (fresh); fallback to Pages for detail JSON if repo file missing. */
-export async function fetchResultsIndex(token: string | null): Promise<ResultMeta[]> {
-  if (token) {
-    const fromRepo = await fetchResultsIndexFromRepo(token);
-    if (fromRepo.length > 0) return fromRepo;
-  }
-  return fetchResultsIndexFromPages();
-}
-
-export async function fetchResult(
-  token: string | null,
-  slug: string,
-): Promise<ResultJson | null> {
-  if (token) {
-    const fromRepo = await fetchResultFromRepo(token, slug);
-    if (fromRepo) return fromRepo;
-  }
-  return fetchResultFromPages(slug);
-}
+export { docToResultMeta };
+export type { ResultDocLike };

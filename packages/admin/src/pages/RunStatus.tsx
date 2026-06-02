@@ -49,6 +49,13 @@ export function RunStatusPage(): ReactNode {
   });
 
   if (!id) return <div className="text-sm text-ink-muted">Неверный id запуска.</div>;
+  if (!pat) {
+    return (
+      <div className="ds-notice ds-notice-warning">
+        Для отображения статуса GitHub Actions нужен PAT. Откройте Login → «Дополнительно: задать PAT».
+      </div>
+    );
+  }
   if (runQuery.isLoading) return <div className="text-sm text-ink-muted">Загружаем статус…</div>;
   if (runQuery.isError) {
     return <div className="ds-notice ds-notice-danger">Ошибка: {(runQuery.error as Error).message}</div>;

@@ -6,7 +6,9 @@ import {
   buildScriptJs,
   buildStylesCss,
   type LandingTemplateContext,
+  type MetricsConfig,
 } from './templates.js';
+import { getEnv } from '../../utils/env.js';
 import { ensurePlaceholderAsset } from './assets.js';
 import { ensureSharedAssets } from './shared.js';
 import type { LandingInfo } from '../../types/landing.js';
@@ -73,7 +75,7 @@ export async function generateLanding(
 
   const html = buildIndexHtml(ctx);
   const css = buildStylesCss();
-  const js = buildScriptJs();
+  const js = buildScriptJs(buildMetricsConfig(slug));
 
   await writeFile(path.join(landingDir, 'index.html'), html);
   await writeFile(path.join(landingDir, 'styles.css'), css);
@@ -91,4 +93,27 @@ export async function generateLanding(
 
 export async function landingExists(slug: string): Promise<boolean> {
   return pathExists(path.join(LANDINGS_DIR, slug, 'index.html'));
+}
+
+/**
+ * Builds the metrics tracker config from env. Returns `undefined` when any
+ * required key is missing, so the landing script silently skips tracking
+ * for repos that haven't configured Firestore yet.
+ */
+function buildMetricsConfig(slug: string): MetricsConfig | undefined {
+  let env;
+  try {
+    env = getEnv();
+  } catch {
+    return undefined;
+  }
+  const { FIREBASE_PROJECT_ID, FIREBASE_WEB_API_KEY, FIREBASE_WEB_AUTH_DOMAIN, FIREBASE_WEB_APP_ID } = env;
+  if (!FIREBASE_PROJECT_ID || !FIREBASE_WEB_API_KEY || !FIREBASE_WEB_APP_ID) return undefined;
+  return {
+    projectId: FIREBASE_PROJECT_ID,
+    apiKey: FIREBASE_WEB_API_KEY,
+    authDomain: FIREBASE_WEB_AUTH_DOMAIN ?? `${FIREBASE_PROJECT_ID}.firebaseapp.com`,
+    appId: FIREBASE_WEB_APP_ID,
+    slug,
+  };
 }

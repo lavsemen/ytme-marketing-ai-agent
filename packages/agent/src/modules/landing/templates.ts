@@ -93,7 +93,8 @@ function tourCardHtml(tour: Tour): string {
     ? `<img src="${imageUrl}" alt="${safeTitle}" loading="lazy">`
     : '';
 
-  return `<article class="tour-card">
+  const safeId = escapeHtml(String(tour.id ?? ''));
+  return `<article class="tour-card" data-tour-id="${safeId}">
             <div class="tc-image">
               ${imageHtml}
               <span class="tc-badge">Авторский</span>
@@ -108,7 +109,7 @@ function tourCardHtml(tour: Tour): string {
                   ${price ? `<span class="tc-from">От</span><strong class="tc-amount">${price}</strong>` : ''}
                 </div>
                 <div class="tc-btns">
-                  <a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="btn-tc-main">Смотреть тур</a>
+                  <a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="btn-tc-main" data-tour-id="${safeId}">Смотреть тур</a>
                 </div>
               </div>
             </div>
@@ -506,8 +507,28 @@ export function buildStylesCss(): string {
 `;
 }
 
-export function buildScriptJs(): string {
-  return `(function () {
+export interface MetricsConfig {
+  /** Firestore project id — required to enable tracker. */
+  projectId: string;
+  apiKey: string;
+  authDomain: string;
+  appId: string;
+  /** Document id under metrics/{slug}. */
+  slug: string;
+}
+
+/**
+ * Builds the landing script.
+ *
+ * When `metrics` is provided the script imports Firebase Web SDK from the
+ * Google CDN (no bundler needed) and increments `metrics/{slug}.views`
+ * once per page load + `metrics/{slug}.clicksByTour.<tourId>` on each
+ * outbound tour click. When `metrics` is undefined the tracker block is
+ * omitted entirely — keeps existing landings working when Firestore isn't
+ * configured yet.
+ */
+export function buildScriptJs(metrics?: MetricsConfig): string {
+  const baseScript = `(function () {
   // Smooth scroll for hash links
   document.querySelectorAll('a[href^="#"]').forEach(function (a) {
     a.addEventListener('click', function (e) {
@@ -539,6 +560,63 @@ export function buildScriptJs(): string {
     onScroll();
     window.addEventListener('scroll', onScroll, { passive: true });
   }
+})();
+`;
+  if (!metrics) return baseScript;
+  // Serialise as JSON for safe injection — escaping `</script>` is enough
+  // here because keys are alphanumeric and we control them all.
+  const cfg = JSON.stringify({
+    apiKey: metrics.apiKey,
+    authDomain: metrics.authDomain,
+    projectId: metrics.projectId,
+    appId: metrics.appId,
+  }).replace(/<\/(script)/gi, '<\\/$1');
+  const slug = JSON.stringify(metrics.slug);
+  return `${baseScript}
+// === Firestore landing metrics (views + clicks) ===
+(function () {
+  var CFG = ${cfg};
+  var SLUG = ${slug};
+  if (!CFG.projectId || !CFG.apiKey || !CFG.appId) return;
+  // Use the Firebase Web SDK from Google CDN — no bundler step needed.
+  import('https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js').then(function (appMod) {
+    return import('https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js').then(function (fsMod) {
+      var app = appMod.initializeApp(CFG);
+      var db = fsMod.getFirestore(app);
+      var ref = fsMod.doc(db, 'metrics', SLUG);
+      var inc = fsMod.increment;
+      // Try a non-merging set first (creates the doc) — falls back to
+      // updateDoc on a permission error, which means the doc already exists.
+      var nowIso = new Date().toISOString();
+      fsMod.setDoc(ref, {
+        views: 1,
+        clicksByTour: {},
+        firstSeenAt: nowIso,
+        lastSeenAt: nowIso,
+      }).catch(function () {
+        return fsMod.updateDoc(ref, {
+          views: inc(1),
+          lastSeenAt: nowIso,
+        });
+      }).catch(function (err) { console.warn('[metrics] view increment failed', err); });
+
+      function trackClick(tourId) {
+        if (!tourId) return;
+        var update = {};
+        update['clicksByTour.' + tourId] = inc(1);
+        update.lastSeenAt = new Date().toISOString();
+        fsMod.updateDoc(ref, update).catch(function (err) {
+          console.warn('[metrics] click increment failed', err);
+        });
+      }
+
+      document.querySelectorAll('[data-tour-id]').forEach(function (el) {
+        el.addEventListener('click', function () {
+          trackClick(el.getAttribute('data-tour-id'));
+        });
+      });
+    });
+  }).catch(function (err) { console.warn('[metrics] SDK load failed', err); });
 })();
 `;
 }

@@ -8,17 +8,12 @@ import {
   SCHEDULES_MAX_ENABLED,
   TZ_OPTIONS,
   applyScheduleChange,
-  loadSchedulesFromRepo,
+  loadSchedules,
   newScheduleId,
   type ScheduleRuleDto,
-  type SchedulesDto,
 } from '../api/schedules';
-import {
-  createGithubClient,
-  dispatchScheduled,
-  formatGithubApiError,
-  getSourcesFile,
-} from '../api/github';
+import { loadSources } from '../api/sources';
+import { createGithubClient, dispatchScheduled, formatGithubApiError } from '../api/github';
 import { useAuth } from '../hooks/useAuth';
 
 type DraftRule = Omit<ScheduleRuleDto, 'id' | 'createdAt' | 'updatedAt'>;
@@ -39,36 +34,24 @@ export function SchedulesPage(): ReactNode {
 
   const query = useQuery({
     queryKey: ['schedules'],
-    queryFn: async () => {
-      if (!pat) throw new Error('no token');
-      return loadSchedulesFromRepo(pat);
-    },
-    enabled: !!pat,
+    queryFn: () => loadSchedules(),
   });
 
   const sourcesQuery = useQuery({
     queryKey: ['sources'],
-    queryFn: async () => {
-      if (!client) throw new Error('no client');
-      return getSourcesFile(client);
-    },
-    enabled: !!client,
+    queryFn: () => loadSources(),
   });
 
   const saveMutation = useMutation({
-    mutationFn: async (
-      mutator: (current: SchedulesDto) => { next: SchedulesDto; message: string },
-    ) => {
-      if (!pat) throw new Error('no token');
-      await applyScheduleChange(pat, mutator);
-    },
+    mutationFn: (mutator: (rules: ScheduleRuleDto[]) => ScheduleRuleDto[]) =>
+      applyScheduleChange((current) => ({ rules: mutator(current.rules) })),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['schedules'] }),
     onError: () => qc.invalidateQueries({ queryKey: ['schedules'] }),
   });
 
   const dispatchMutation = useMutation({
     mutationFn: async () => {
-      if (!client) throw new Error('no client');
+      if (!client) throw new Error('PAT нужен для запуска workflow (Settings → PAT).');
       await dispatchScheduled(client, { force: true });
     },
   });
@@ -93,11 +76,11 @@ export function SchedulesPage(): ReactNode {
   }
 
   async function handleSave(draft: DraftRule, editingId: string | null): Promise<void> {
-    await saveMutation.mutateAsync((current) => {
+    await saveMutation.mutateAsync((rules) => {
       const now = new Date().toISOString();
       let next: ScheduleRuleDto[];
       if (editingId) {
-        next = current.rules.map((r) =>
+        next = rules.map((r) =>
           r.id === editingId
             ? {
                 ...r,
@@ -115,7 +98,7 @@ export function SchedulesPage(): ReactNode {
           createdAt: now,
           updatedAt: now,
         };
-        next = [...current.rules, newRule];
+        next = [...rules, newRule];
       }
       const wouldEnabled = next.filter((r) => r.enabled).length;
       if (wouldEnabled > SCHEDULES_MAX_ENABLED) {
@@ -123,12 +106,7 @@ export function SchedulesPage(): ReactNode {
           `Лимит активных правил: максимум ${SCHEDULES_MAX_ENABLED}. Сейчас стало бы ${wouldEnabled}. Отключите лишние.`,
         );
       }
-      return {
-        next: { rules: next },
-        message: editingId
-          ? `admin: update schedule "${draft.name}"`
-          : `admin: add schedule "${draft.name}"`,
-      };
+      return next;
     });
     setShowForm(false);
     setEditing(null);
@@ -136,10 +114,7 @@ export function SchedulesPage(): ReactNode {
 
   async function handleDelete(r: ScheduleRuleDto): Promise<void> {
     if (!confirm(`Удалить правило "${r.name}"?`)) return;
-    await saveMutation.mutateAsync((current) => ({
-      next: { rules: current.rules.filter((x) => x.id !== r.id) },
-      message: `admin: remove schedule "${r.name}"`,
-    }));
+    await saveMutation.mutateAsync((rules) => rules.filter((x) => x.id !== r.id));
   }
 
   async function handleToggle(r: ScheduleRuleDto): Promise<void> {
@@ -150,37 +125,30 @@ export function SchedulesPage(): ReactNode {
       );
       return;
     }
-    await saveMutation.mutateAsync((current) => {
-      const existing = current.rules.find((x) => x.id === r.id);
-      if (!existing) return { next: current, message: `admin: noop on schedule "${r.id}"` };
+    await saveMutation.mutateAsync((rules) => {
+      const existing = rules.find((x) => x.id === r.id);
+      if (!existing) return rules;
       // Re-check limit against FRESH rules (someone else may have toggled).
       if (!existing.enabled) {
-        const enabledNow = current.rules.filter((x) => x.enabled).length;
+        const enabledNow = rules.filter((x) => x.enabled).length;
         if (enabledNow >= SCHEDULES_MAX_ENABLED) {
           throw new Error(
             `Лимит активных правил: максимум ${SCHEDULES_MAX_ENABLED}. Отключите другое перед включением.`,
           );
         }
       }
-      const next = current.rules.map((x) =>
+      return rules.map((x) =>
         x.id === r.id
           ? { ...x, enabled: !existing.enabled, updatedAt: new Date().toISOString() }
           : x,
       );
-      return {
-        next: { rules: next },
-        message: `admin: ${existing.enabled ? 'disable' : 'enable'} schedule "${existing.name}"`,
-      };
     });
   }
 
-  if (!pat) {
-    return <div className="ds-notice ds-notice-warning">Нужен PAT с правом Contents: Read and write.</div>;
-  }
   if (query.isLoading) return <div className="text-sm text-ink-muted">Загружаем расписания…</div>;
   if (query.isError) {
     return (
-      <div className="ds-notice ds-notice-danger">Ошибка: {formatGithubApiError(query.error)}</div>
+      <div className="ds-notice ds-notice-danger">Ошибка: {errorMessage(query.error)}</div>
     );
   }
 
@@ -204,9 +172,13 @@ export function SchedulesPage(): ReactNode {
           <button
             type="button"
             onClick={() => dispatchMutation.mutate()}
-            disabled={dispatchMutation.isPending || enabledCount === 0}
+            disabled={dispatchMutation.isPending || enabledCount === 0 || !pat}
             className="btn-outline"
-            title="Запускает scheduled.yml с force=true — выполнятся все включённые правила, независимо от времени."
+            title={
+              !pat
+                ? 'Для запуска нужен GitHub PAT (Settings → PAT).'
+                : 'Запускает scheduled.yml с force=true — выполнятся все включённые правила.'
+            }
           >
             <Play size={14} />
             {dispatchMutation.isPending ? 'Запускаем…' : 'Запустить сейчас'}
@@ -322,7 +294,7 @@ export function SchedulesPage(): ReactNode {
 
       {saveMutation.isError && (
         <div className="ds-notice ds-notice-danger">
-          Не удалось сохранить: {formatGithubApiError(saveMutation.error)}
+          Не удалось сохранить: {errorMessage(saveMutation.error)}
         </div>
       )}
 
@@ -592,4 +564,9 @@ function formatInTz(d: Date, tz: string): string {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(d);
+}
+
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return String(err);
 }

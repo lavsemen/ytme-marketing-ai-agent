@@ -1,19 +1,9 @@
 import { type ReactNode } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { ExternalLink, Loader2 } from 'lucide-react';
-import {
-  fetchResultsIndex,
-  REJECTION_REASON_LABELS,
-  type ResultMeta,
-} from '../api/results';
-import {
-  createGithubClient,
-  listAllPendingRuns,
-  type WorkflowRunSummary,
-} from '../api/github';
-import { CONFIG } from '../lib/config';
-import { useAuth } from '../hooks/useAuth';
+import { REJECTION_REASON_LABELS, type ResultMeta } from '../api/results';
+import { useFirestoreHistory } from '../hooks/useFirestoreHistory';
+import type { RunDoc } from '../api/db';
 
 function StatusBadge({ entry }: { entry: ResultMeta }): ReactNode {
   if (entry.status === 'rejected') {
@@ -25,13 +15,6 @@ function StatusBadge({ entry }: { entry: ResultMeta }): ReactNode {
     );
   }
   return <span className="ds-badge-success">Готово</span>;
-}
-
-function workflowLabel(file: string | undefined): string {
-  if (!file) return 'workflow';
-  if (file === CONFIG.workflowFile) return 'Ручной запуск';
-  if (file === CONFIG.scheduledWorkflowFile) return 'По расписанию';
-  return file;
 }
 
 function PendingBadge({ status }: { status: string }): ReactNode {
@@ -48,41 +31,18 @@ function PendingBadge({ status }: { status: string }): ReactNode {
   );
 }
 
+function pendingLabelFromRun(run: RunDoc): string {
+  return run.trigger === 'scheduled' ? 'По расписанию' : 'Ручной запуск';
+}
+
 export function HistoryPage(): ReactNode {
-  const { pat } = useAuth();
+  const fsHistory = useFirestoreHistory();
 
-  // Completed runs — read from main/results-index.json (faster + works
-  // without PAT via GitHub Pages fallback). 30s refresh is enough since
-  // they don't change after creation.
-  const completedQuery = useQuery({
-    queryKey: ['results-index', pat ? 'repo' : 'pages'],
-    queryFn: () => fetchResultsIndex(pat),
-    refetchInterval: 30_000,
-  });
-
-  // Pending runs come from the Actions API across BOTH workflows
-  // (manual + scheduled). 5s refresh keeps the UI responsive without
-  // hammering the API. Requires PAT — without it we just hide the section.
-  const pendingQuery = useQuery({
-    queryKey: ['pending-runs'],
-    queryFn: async () => {
-      if (!pat) return [] as WorkflowRunSummary[];
-      const client = createGithubClient(pat);
-      return listAllPendingRuns(client);
-    },
-    enabled: !!pat,
-    refetchInterval: 5_000,
-    // Don't flicker the section between requests.
-    refetchIntervalInBackground: false,
-    staleTime: 4_000,
-  });
-
-  const visiblePending = pendingQuery.data ?? [];
-  const results = completedQuery.data ?? [];
-
-  if (completedQuery.isLoading) {
+  if (fsHistory.loading) {
     return <div className="text-sm text-ink-muted">Загружаем историю…</div>;
   }
+
+  const results = fsHistory.results;
 
   return (
     <div className="space-y-6">
@@ -91,15 +51,14 @@ export function HistoryPage(): ReactNode {
           История <span className="text-lime">генераций</span>
         </h2>
         <p className="mt-1 text-sm text-ink-muted">
-          Активные запуски обновляются каждые 5 секунд, завершённые — каждые 30 секунд. Список из ветки{' '}
-          <code className="font-mono text-ink-secondary">main</code> репозитория.
+          Realtime-подписка через Firestore: активные и завершённые запуски обновляются мгновенно.
         </p>
       </div>
 
-      {visiblePending.length > 0 && (
+      {fsHistory.pending.length > 0 && (
         <section className="space-y-3">
           <h3 className="text-sm font-bold uppercase tracking-wider text-ink-secondary">
-            Сейчас выполняются ({visiblePending.length})
+            Сейчас выполняются ({fsHistory.pending.length})
           </h3>
           <div className="ds-table-wrap">
             <table className="ds-table">
@@ -113,37 +72,34 @@ export function HistoryPage(): ReactNode {
                 </tr>
               </thead>
               <tbody>
-                {visiblePending.map((r) => (
-                  <tr key={r.id}>
+                {fsHistory.pending.map((r) => (
+                  <tr key={r.runId}>
                     <td className="whitespace-nowrap font-mono text-xs text-ink-muted">
-                      {new Date(r.created_at).toLocaleString('ru-RU')}
+                      {new Date(r.startedAt).toLocaleString('ru-RU')}
                     </td>
                     <td>
                       <PendingBadge status={r.status} />
                     </td>
                     <td>
-                      <span className="ds-badge-muted">{workflowLabel(r.workflow_file)}</span>
+                      <span className="ds-badge-muted">{pendingLabelFromRun(r)}</span>
                     </td>
                     <td>
-                      <Link
-                        to={`/runs/${r.id}`}
-                        className="font-semibold text-ink-primary hover:text-lime"
-                      >
-                        {r.display_title || `Run #${r.run_number}`}
-                      </Link>
-                      <div className="text-xxs text-ink-faint">
-                        #{r.run_number} · {r.head_branch ?? '—'}
-                      </div>
+                      <span className="font-semibold text-ink-primary">
+                        {r.source ?? 'all'} · {r.hint ?? '—'}
+                      </span>
+                      <div className="text-xxs text-ink-faint">runId: {r.runId}</div>
                     </td>
                     <td className="text-right">
-                      <a
-                        href={r.html_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-xs font-semibold text-ink-secondary hover:text-lime"
-                      >
-                        GitHub <ExternalLink size={11} />
-                      </a>
+                      {r.htmlUrl && (
+                        <a
+                          href={r.htmlUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-ink-secondary hover:text-lime"
+                        >
+                          GitHub <ExternalLink size={11} />
+                        </a>
+                      )}
                     </td>
                   </tr>
                 ))}

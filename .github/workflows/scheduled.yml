@@ -2,10 +2,10 @@ name: Run scheduled generations
 
 on:
   schedule:
-    # Hourly. Each rule in packages/agent/src/config/schedules.json defines its
-    # own cron+tz; the agent runner picks rules whose previous tick falls in
-    # the current UTC hour window. GitHub schedule jitter is up to ~15 min,
-    # so checking once an hour is enough.
+    # Hourly. Each rule in Firestore config/schedules defines its own cron+tz;
+    # the agent runner picks rules whose previous tick falls in the current
+    # UTC hour window. GitHub schedule jitter is up to ~15 min, so checking
+    # once an hour is enough.
     - cron: '0 * * * *'
   workflow_dispatch:
     inputs:
@@ -46,11 +46,27 @@ jobs:
       - name: Check required secrets
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
         run: |
           if [ -z "${ANTHROPIC_API_KEY}" ]; then
             echo "::error::ANTHROPIC_API_KEY is missing or empty. Add it: Settings → Secrets and variables → Actions → New repository secret"
             exit 1
           fi
+          if [ -z "${FIREBASE_SERVICE_ACCOUNT_JSON}" ]; then
+            echo "::error::FIREBASE_SERVICE_ACCOUNT_JSON is missing. Firebase Console → Service accounts → Generate new private key"
+            exit 1
+          fi
+
+      - name: Setup Firebase credentials
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -e
+          CREDS="${RUNNER_TEMP}/firebase-sa.json"
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$CREDS"
+          node -e "JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'))" "$CREDS"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$CREDS" >> "$GITHUB_ENV"
+          echo "Firebase service account JSON validated"
 
       - name: Run scheduled rules
         env:
@@ -62,6 +78,12 @@ jobs:
           LANDING_BASE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
           LOG_LEVEL: info
           FORCE_RUN: ${{ inputs.force }}
+          FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+          FIREBASE_WEB_API_KEY: ${{ vars.FIREBASE_WEB_API_KEY }}
+          FIREBASE_WEB_AUTH_DOMAIN: ${{ vars.FIREBASE_WEB_AUTH_DOMAIN }}
+          FIREBASE_WEB_APP_ID: ${{ vars.FIREBASE_WEB_APP_ID }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ vars.SLACK_CHANNEL_ID }}
         run: |
           set -e
           ARGS=(--run-id "${{ github.run_id }}")
@@ -70,12 +92,12 @@ jobs:
           fi
           yarn workspace @ytme/agent run-scheduled "${ARGS[@]}"
 
-      - name: Commit & push results
+      - name: Commit & push landings
         run: |
           set -e
           git config user.name  "youtravel-marketing-bot"
           git config user.email "youtravel-marketing-bot@users.noreply.github.com"
-          git add landings out/results
+          git add landings
           if git diff --cached --quiet; then
             echo "Nothing to commit."
             exit 0

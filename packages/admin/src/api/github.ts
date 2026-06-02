@@ -1,16 +1,17 @@
 import { Octokit } from '@octokit/rest';
 import { CONFIG } from '../lib/config';
 
-export interface SourceDto {
-  id: string;
-  name: string;
-  url: string;
-  enabled: boolean;
-  language: string;
-  type?: 'rss' | 'html' | 'auto';
-  createdAt?: string;
-  updatedAt?: string;
-}
+/**
+ * GitHub API surface used by the admin UI.
+ *
+ * After the Firestore migration, GitHub is only used to:
+ *  - trigger workflows (generate.yml / scheduled.yml via workflow_dispatch)
+ *  - poll a single run's status/jobs for the RunStatus page
+ *
+ * All config/data CRUD lives in Firestore (see api/sources.ts, api/schedules.ts,
+ * api/prompts.ts, api/settings.ts). PAT is therefore only needed for users who
+ * want to launch a workflow from the UI.
+ */
 
 /** In dev, route API calls through Vite proxy to avoid browser CORS on api.github.com. */
 function githubApiBaseUrl(): string | undefined {
@@ -27,22 +28,6 @@ export function createGithubClient(token: string): Octokit {
   });
 }
 
-function decodeBase64(b64: string): string {
-  const cleaned = b64.replace(/\s+/g, '');
-  const binary = atob(cleaned);
-  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
-  return new TextDecoder('utf-8').decode(bytes);
-}
-
-function encodeBase64(input: string): string {
-  const bytes = new TextEncoder().encode(input);
-  let binary = '';
-  bytes.forEach((b) => {
-    binary += String.fromCharCode(b);
-  });
-  return btoa(binary);
-}
-
 export async function getCurrentUser(token: string): Promise<{ login: string; avatar_url: string }> {
   const client = createGithubClient(token);
   const res = await client.users.getAuthenticated();
@@ -51,8 +36,7 @@ export async function getCurrentUser(token: string): Promise<{ login: string; av
 
 export interface PatVerification {
   user: { login: string; avatar_url: string };
-  canReadActions: boolean;
-  canWriteContents: boolean;
+  canDispatch: boolean;
   workflowFound: boolean;
   warnings: string[];
 }
@@ -66,29 +50,18 @@ function isForbidden(err: unknown): boolean {
   );
 }
 
-/** Validates PAT scopes needed by the admin UI (sources CRUD + workflow dispatch). */
+/**
+ * Validates a PAT for the only scope the UI needs: dispatching
+ * generate.yml. Contents permissions are no longer required since all
+ * config writes go through Firestore.
+ */
 export async function verifyPatPermissions(token: string): Promise<PatVerification> {
   const client = createGithubClient(token);
   const user = await getCurrentUser(token);
   const warnings: string[] = [];
 
-  let canWriteContents = false;
-  try {
-    await client.repos.getContent({
-      owner: CONFIG.repoOwner,
-      repo: CONFIG.repoName,
-      path: CONFIG.sourcesPath,
-      ref: CONFIG.branch,
-    });
-    canWriteContents = true;
-  } catch (err) {
-    if (isForbidden(err)) {
-      warnings.push('Contents: нужен доступ Read and write (для редактирования sources.json).');
-    }
-  }
-
   let workflowFound = false;
-  let canReadActions = false;
+  let canDispatch = false;
   try {
     await client.actions.getWorkflow({
       owner: CONFIG.repoOwner,
@@ -96,7 +69,7 @@ export async function verifyPatPermissions(token: string): Promise<PatVerificati
       workflow_id: CONFIG.workflowFile,
     });
     workflowFound = true;
-    canReadActions = true;
+    canDispatch = true;
   } catch (err) {
     if (isForbidden(err)) {
       warnings.push(
@@ -117,8 +90,7 @@ export async function verifyPatPermissions(token: string): Promise<PatVerificati
 
   return {
     user,
-    canReadActions,
-    canWriteContents,
+    canDispatch,
     workflowFound,
     warnings,
   };
@@ -135,8 +107,7 @@ export function formatGithubApiError(err: unknown): string {
   if (raw.includes('Resource not accessible by personal access token')) {
     return [
       'У токена нет прав для этого действия.',
-      'Fine-grained PAT: Repository permissions → Actions → Read and write (не только Read).',
-      'Также: Contents → Read and write.',
+      'Fine-grained PAT: Repository permissions → Actions → Read and write.',
       'Либо создайте Classic PAT со scopes: repo + workflow.',
       'После смены токена: выйдите и войдите снова в админке.',
     ].join(' ');
@@ -157,215 +128,6 @@ export function formatGithubApiError(err: unknown): string {
   }
 
   return raw;
-}
-
-export interface FileContent {
-  content: string;
-  sha: string;
-}
-
-export interface GetFileOptions {
-  /**
-   * When true, bypass HTTP / CDN / browser caches so the response reflects
-   * the absolute latest commit on the branch. Required before write-with-sha
-   * flows (commitJsonAtomic) — GitHub Contents API caches ~60s and would
-   * otherwise hand us a stale sha after a 409 retry.
-   */
-  fresh?: boolean;
-}
-
-export async function getFileContent(
-  client: Octokit,
-  path: string,
-  options: GetFileOptions = {},
-): Promise<FileContent | null> {
-  try {
-    const res = await client.repos.getContent({
-      owner: CONFIG.repoOwner,
-      repo: CONFIG.repoName,
-      path,
-      ref: CONFIG.branch,
-      ...(options.fresh
-        ? {
-            headers: {
-              // Empty If-None-Match defeats Octokit's automatic ETag re-use,
-              // so GitHub returns the freshest sha instead of a 304 backed
-              // by a previously cached body (which can be up to ~60s stale).
-              'If-None-Match': '',
-              'Cache-Control': 'no-cache',
-            },
-          }
-        : {}),
-    });
-    const data = Array.isArray(res.data) ? null : res.data;
-    if (!data || data.type !== 'file') return null;
-    const content = decodeBase64(data.content);
-    return { content, sha: data.sha };
-  } catch (err) {
-    if ((err as { status?: number }).status === 404) return null;
-    throw err;
-  }
-}
-
-export async function putFileContent(
-  client: Octokit,
-  args: {
-    path: string;
-    content: string;
-    sha?: string;
-    message: string;
-  },
-): Promise<void> {
-  await client.repos.createOrUpdateFileContents({
-    owner: CONFIG.repoOwner,
-    repo: CONFIG.repoName,
-    path: args.path,
-    message: args.message,
-    content: encodeBase64(args.content),
-    branch: CONFIG.branch,
-    ...(args.sha ? { sha: args.sha } : {}),
-  });
-}
-
-function isShaConflict(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false;
-  const e = err as { status?: number; message?: string };
-  // GitHub returns 409 with a "does not match <sha>" body when the
-  // provided sha is stale. Some edge cases return 422 with similar text.
-  if (e.status === 409) return true;
-  if (typeof e.message === 'string' && /does not match|is at|sha|stale/i.test(e.message)) {
-    if (e.status === 422 || e.status === 409) return true;
-  }
-  return false;
-}
-
-export interface JsonCommitResult<T> {
-  next: T;
-  message: string;
-}
-
-const ATOMIC_MAX_ATTEMPTS = 3;
-const ATOMIC_BACKOFF_MS = [150, 400];
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Read → mutate → commit cycle that ALWAYS fetches the latest sha right
- * before writing. This eliminates race conditions caused by:
- *  - stale react-query cache (user clicked twice before refetch finished)
- *  - parallel admin actions (two toggles in flight at once)
- *  - external commits (scheduled.yml or generate.yml landing a commit
- *    between page load and save).
- *
- * Implementation notes:
- *  - GET uses `fresh: true` so we bypass Octokit/CDN ETag cache (~60s).
- *    Without it, the second GET after a 409 can return the same stale sha
- *    and the retry would fail with an identical conflict.
- *  - On a sha-mismatch (409/422 "does not match") we retry up to
- *    ATOMIC_MAX_ATTEMPTS times with small backoff (150ms, 400ms). 3
- *    attempts comfortably absorb the typical CI race; after that we
- *    surface a clear, actionable error instead of silently looping.
- *
- * `mutator` MUST be pure with respect to the input array/object: do not
- * mutate `current` in place. Return a fresh value.
- */
-export async function commitJsonAtomic<T>(
-  client: Octokit,
-  path: string,
-  parse: (raw: string) => T,
-  fallback: () => T,
-  mutator: (current: T) => JsonCommitResult<T>,
-): Promise<{ next: T; sha: string }> {
-  let lastErr: unknown = null;
-  for (let attempt = 0; attempt < ATOMIC_MAX_ATTEMPTS; attempt += 1) {
-    const file = await getFileContent(client, path, { fresh: true });
-    const sha = file?.sha ?? null;
-    const current = file ? parse(file.content) : fallback();
-    const { next, message } = mutator(current);
-    const content = JSON.stringify(next, null, 2) + '\n';
-
-    try {
-      await putFileContent(client, {
-        path,
-        content,
-        message,
-        ...(sha ? { sha } : {}),
-      });
-      // putFileContent returns void; we don't have the new sha here, but
-      // callers invalidate react-query so the next read gets the truth.
-      return { next, sha: sha ?? '' };
-    } catch (err) {
-      lastErr = err;
-      if (isShaConflict(err) && attempt + 1 < ATOMIC_MAX_ATTEMPTS) {
-        const delay = ATOMIC_BACKOFF_MS[attempt] ?? 400;
-        await sleep(delay);
-        continue;
-      }
-      throw err;
-    }
-  }
-  // Build a human-friendly message so the admin UI surfaces what to do
-  // (instead of dumping the raw GitHub sha mismatch text on the user).
-  const baseMsg =
-    lastErr && typeof lastErr === 'object' && 'message' in lastErr
-      ? String((lastErr as { message: string }).message)
-      : 'unknown error';
-  throw new Error(
-    `Не удалось сохранить ${path}: репозиторий несколько раз менялся параллельно (${baseMsg}). Обновите страницу и попробуйте ещё раз.`,
-  );
-}
-
-export async function getSourcesFile(
-  client: Octokit,
-): Promise<{ sources: SourceDto[]; sha: string | null }> {
-  const file = await getFileContent(client, CONFIG.sourcesPath);
-  if (!file) return { sources: [], sha: null };
-  try {
-    const parsed = JSON.parse(file.content) as SourceDto[];
-    return { sources: parsed, sha: file.sha };
-  } catch (err) {
-    throw new Error(`sources.json is not valid JSON: ${(err as Error).message}`);
-  }
-}
-
-export async function saveSourcesFile(
-  client: Octokit,
-  sources: SourceDto[],
-  sha: string | null,
-  commitMessage: string,
-): Promise<void> {
-  const json = JSON.stringify(sources, null, 2) + '\n';
-  await putFileContent(client, {
-    path: CONFIG.sourcesPath,
-    content: json,
-    ...(sha ? { sha } : {}),
-    message: commitMessage,
-  });
-}
-
-/**
- * Atomic update of sources.json. The mutator receives the FRESH list from
- * the repo (not from react-query cache) so it can safely de-dupe by id and
- * never overwrites someone else's commit silently.
- */
-export async function applySourceChange(
-  client: Octokit,
-  mutator: (current: SourceDto[]) => JsonCommitResult<SourceDto[]>,
-): Promise<SourceDto[]> {
-  const { next } = await commitJsonAtomic<SourceDto[]>(
-    client,
-    CONFIG.sourcesPath,
-    (raw) => {
-      const parsed = JSON.parse(raw) as SourceDto[];
-      if (!Array.isArray(parsed)) throw new Error('sources.json is not an array');
-      return parsed;
-    },
-    () => [],
-    mutator,
-  );
-  return next;
 }
 
 export interface WorkflowRunSummary {
@@ -476,37 +238,6 @@ export async function listRecentRuns(
     display_title: r.display_title ?? r.name ?? '',
     workflow_file: workflowFile,
   }));
-}
-
-/**
- * Lists all pending (queued / in-progress) runs across BOTH workflows
- * (generate.yml + scheduled.yml) so the History page can show real-time
- * progress for manual *and* cron-triggered runs in a single feed.
- *
- * We query each workflow with `status` filters; "queued" and "in_progress"
- * cover the active states. GitHub doesn't accept multiple statuses in one
- * call, so we make 4 small parallel requests and de-dupe by run id.
- */
-export async function listAllPendingRuns(client: Octokit): Promise<WorkflowRunSummary[]> {
-  const workflows = [CONFIG.workflowFile, CONFIG.scheduledWorkflowFile];
-  const statuses: Array<'queued' | 'in_progress'> = ['queued', 'in_progress'];
-  const requests = workflows.flatMap((wf) =>
-    statuses.map((status) =>
-      listRecentRuns(client, { workflowFile: wf, status, perPage: 10 }).catch(() => [] as WorkflowRunSummary[]),
-    ),
-  );
-  const chunks = await Promise.all(requests);
-  const all = chunks.flat();
-  const dedup = new Map<number, WorkflowRunSummary>();
-  for (const r of all) {
-    // Defensive: GitHub occasionally returns finalized runs under
-    // status=in_progress right after they finish — filter again here.
-    if (!isPendingStatus(r.status)) continue;
-    dedup.set(r.id, r);
-  }
-  return Array.from(dedup.values()).sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-  );
 }
 
 export async function getRun(client: Octokit, runId: number): Promise<WorkflowRunSummary> {

@@ -1,8 +1,5 @@
-import path from 'node:path';
-import { promises as fs } from 'node:fs';
 import { logger } from './utils/logger.js';
 import { getEnv, requireAnthropicKey, type Env } from './utils/env.js';
-import { AGENT_ROOT } from './utils/fs.js';
 import {
   SourcesFileSchema,
   type Source,
@@ -19,12 +16,6 @@ import { sanitizeGeoFilter } from './modules/tours/youtravelClient.js';
 import { rankToursDetailed } from './modules/tours/tourRanker.js';
 import { applyTourFilters } from './modules/tours/tourFilters.js';
 import { generateLanding } from './modules/landing/landingGenerator.js';
-import {
-  saveResult,
-  saveRejectedResult,
-  updateIndex,
-  updateIndexRejected,
-} from './modules/deploy/manifest.js';
 import type {
   PipelineResult,
   PipelineRunResult,
@@ -42,9 +33,16 @@ import {
 } from './config/agentConfig.js';
 import { DEFAULT_PROMPTS } from './modules/ai/prompts.js';
 import { filterBlocked, boostInsights } from './modules/ai/insightRanker.js';
+import { getDb } from './db/firestore.js';
+import {
+  failRun,
+  persistRejection as persistRejectionToStorage,
+  persistSuccess,
+  startRun,
+} from './modules/deploy/persist.js';
+import { tryNotifySlackRejected, tryNotifySlackSuccess } from './modules/notify/slack.js';
 
 const AGENT_VERSION = '0.1.0';
-const SOURCES_PATH = path.join(AGENT_ROOT, 'src', 'config', 'sources.json');
 
 export interface PipelineOptions {
   sourceId?: string;
@@ -53,13 +51,20 @@ export interface PipelineOptions {
   runId?: string;
   hint?: string;
   settings?: AgentSettings;
+  /** Optional trigger label that ends up in Firestore `runs/{runId}.trigger`.
+   *  Defaults to "manual" when omitted. */
+  trigger?: 'manual' | 'scheduled';
 }
 
 export async function loadSources(): Promise<SourcesFile> {
-  const raw = await fs.readFile(SOURCES_PATH, 'utf8');
-  const parsed = SourcesFileSchema.safeParse(JSON.parse(raw));
+  const snap = await getDb().collection('config').doc('sources').get();
+  const data = snap.exists ? (snap.data() as { items?: unknown }) : null;
+  const items = Array.isArray(data?.items) ? data!.items : [];
+  const parsed = SourcesFileSchema.safeParse(items);
   if (!parsed.success) {
-    throw new Error(`sources.json validation failed:\n${parsed.error.message}`);
+    throw new Error(
+      `Firestore config/sources validation failed:\n${parsed.error.message}`,
+    );
   }
   return parsed.data;
 }
@@ -138,16 +143,50 @@ function snapshotSettings(s: AgentSettings): NonNullable<
 }
 
 async function persistRejection(result: RejectedPipelineResult): Promise<RejectedPipelineResult> {
-  const slug = await saveRejectedResult(result);
-  await updateIndexRejected(result, slug);
+  const slug = await persistRejectionToStorage(result);
   logger.warn(
     { reason: result.reason, message: result.message, slug },
     'Pipeline rejected (saved to results)',
   );
+  await tryNotifySlackRejected(result);
   return result;
 }
 
 export async function runPipeline(
+  options: PipelineOptions = {},
+): Promise<PipelineRunResult> {
+  // Record run lifecycle in Firestore so the admin UI can render
+  // "in_progress" rows immediately. No-op when Firestore is disabled.
+  if (options.runId) {
+    try {
+      await startRun({
+        runId: options.runId,
+        source: options.sourceId,
+        hint: options.hint,
+        trigger: options.trigger ?? 'manual',
+      });
+    } catch (err) {
+      logger.warn({ err }, 'startRun failed (continuing pipeline)');
+    }
+  }
+  try {
+    return await runPipelineInner(options);
+  } catch (err) {
+    if (options.runId) {
+      try {
+        await failRun({
+          runId: options.runId,
+          errorMessage: err instanceof Error ? err.message : String(err),
+        });
+      } catch (markErr) {
+        logger.warn({ err: markErr }, 'failRun mark failed');
+      }
+    }
+    throw err;
+  }
+}
+
+async function runPipelineInner(
   options: PipelineOptions = {},
 ): Promise<PipelineRunResult> {
   const env = options.env ?? getEnv();
@@ -435,8 +474,8 @@ export async function runPipeline(
     },
   };
 
-  await saveResult(result);
-  await updateIndex(result);
+  await persistSuccess(result);
+  await tryNotifySlackSuccess(result);
 
   logger.info({ slug: landing.slug, url: landing.url }, 'Pipeline finished');
   return result;

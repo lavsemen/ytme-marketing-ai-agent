@@ -1,11 +1,5 @@
-import path from 'node:path';
 import { z } from 'zod';
-import { AGENT_ROOT, readJsonIfExists, writeJson } from '../utils/fs.js';
-
-const CONFIG_DIR = path.join(AGENT_ROOT, 'src', 'config');
-const PROMPTS_FILE = path.join(CONFIG_DIR, 'prompts.json');
-const SETTINGS_FILE = path.join(CONFIG_DIR, 'settings.json');
-const SCHEDULES_FILE = path.join(CONFIG_DIR, 'schedules.json');
+import { getDb } from '../db/firestore.js';
 
 const PromptsSchema = z.object({
   systemGuardrails: z.string().min(1),
@@ -151,26 +145,42 @@ export function mergePrompts(
   defaults: PromptsConfig,
   override: unknown,
 ): PromptsConfig {
-  const merged = deepMerge<PromptsConfig>(defaults, override);
+  const merged = { ...defaults };
+  if (override && typeof override === 'object') {
+    for (const key of Object.keys(defaults) as (keyof PromptsConfig)[]) {
+      const val = (override as Record<string, unknown>)[key];
+      // Firestore / admin UI may store "" for fields the user never filled — keep repo defaults.
+      if (typeof val === 'string' && val.trim()) {
+        merged[key] = val.trim();
+      }
+    }
+  }
   return PromptsSchema.parse(merged);
 }
 
+/** Reads `config/settings` from Firestore and merges with defaults. */
 export async function loadSettings(): Promise<AgentSettings> {
-  const raw = await readJsonIfExists<unknown>(SETTINGS_FILE);
-  return mergeSettings(raw);
+  const snap = await getDb().collection('config').doc('settings').get();
+  return mergeSettings(snap.exists ? snap.data() : null);
 }
 
 export async function loadPrompts(defaults: PromptsConfig): Promise<PromptsConfig> {
-  const raw = await readJsonIfExists<unknown>(PROMPTS_FILE);
-  return mergePrompts(defaults, raw);
+  const snap = await getDb().collection('config').doc('prompts').get();
+  return mergePrompts(defaults, snap.exists ? snap.data() : null);
 }
 
 export async function saveSettings(settings: AgentSettings): Promise<void> {
-  await writeJson(SETTINGS_FILE, settings);
+  await getDb()
+    .collection('config')
+    .doc('settings')
+    .set({ ...settings, updatedAt: new Date().toISOString() }, { merge: true });
 }
 
 export async function savePrompts(prompts: PromptsConfig): Promise<void> {
-  await writeJson(PROMPTS_FILE, prompts);
+  await getDb()
+    .collection('config')
+    .doc('prompts')
+    .set({ ...prompts, updatedAt: new Date().toISOString() }, { merge: true });
 }
 
 /**
@@ -207,12 +217,15 @@ export function mergeSchedules(override: unknown): SchedulesConfig {
 }
 
 export async function loadSchedules(): Promise<SchedulesConfig> {
-  const raw = await readJsonIfExists<unknown>(SCHEDULES_FILE);
-  return mergeSchedules(raw);
+  const snap = await getDb().collection('config').doc('schedules').get();
+  return mergeSchedules(snap.exists ? snap.data() : null);
 }
 
 export async function saveSchedules(s: SchedulesConfig): Promise<void> {
-  await writeJson(SCHEDULES_FILE, s);
+  await getDb()
+    .collection('config')
+    .doc('schedules')
+    .set({ ...s, updatedAt: new Date().toISOString() }, { merge: true });
 }
 
 /** Replaces {{path.to.key}} placeholders with values; arrays joined by ", "; missing → "". */

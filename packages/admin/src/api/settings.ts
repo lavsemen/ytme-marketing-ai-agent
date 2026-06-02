@@ -1,10 +1,5 @@
-import { CONFIG } from '../lib/config';
-import {
-  commitJsonAtomic,
-  createGithubClient,
-  getFileContent,
-  putFileContent,
-} from './github';
+import { getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { refs } from './db';
 
 export const BRAND_VOICES = ['friendly', 'formal', 'playful', 'luxury'] as const;
 export type BrandVoice = (typeof BRAND_VOICES)[number];
@@ -70,6 +65,9 @@ export interface AgentSettingsDto {
     minNights: number | null;
     maxNights: number | null;
   };
+  /** Optional Firestore server timestamp (ISO string at read time). Never
+   *  set by the UI directly — populated by setDoc with serverTimestamp(). */
+  updatedAt?: string;
 }
 
 export const DEFAULT_SETTINGS: AgentSettingsDto = {
@@ -110,7 +108,6 @@ export const DEFAULT_SETTINGS: AgentSettingsDto = {
 
 export interface SettingsFile {
   settings: AgentSettingsDto;
-  sha: string | null;
 }
 
 function mergeSettings(over: Partial<AgentSettingsDto>): AgentSettingsDto {
@@ -131,53 +128,17 @@ function mergeSettings(over: Partial<AgentSettingsDto>): AgentSettingsDto {
   };
 }
 
-export async function loadSettingsFromRepo(token: string): Promise<SettingsFile> {
-  const client = createGithubClient(token);
-  const file = await getFileContent(client, CONFIG.settingsPath);
-  if (!file) {
-    return { settings: { ...DEFAULT_SETTINGS }, sha: null };
-  }
-  try {
-    const parsed = JSON.parse(file.content) as Partial<AgentSettingsDto>;
-    return { settings: mergeSettings(parsed), sha: file.sha };
-  } catch (err) {
-    throw new Error(`settings.json is not valid JSON: ${(err as Error).message}`);
-  }
+export async function loadSettings(): Promise<SettingsFile> {
+  const snap = await getDoc(refs.settings());
+  if (!snap.exists()) return { settings: { ...DEFAULT_SETTINGS } };
+  return { settings: mergeSettings(snap.data() as Partial<AgentSettingsDto>) };
 }
 
-export async function saveSettingsToRepo(
-  token: string,
-  settings: AgentSettingsDto,
-  sha: string | null,
-  commitMessage: string,
-): Promise<void> {
-  const client = createGithubClient(token);
-  const json = JSON.stringify(settings, null, 2) + '\n';
-  await putFileContent(client, {
-    path: CONFIG.settingsPath,
-    content: json,
-    message: commitMessage,
-    ...(sha ? { sha } : {}),
+/** Full-replace of config/settings. Firestore is the source of truth. */
+export async function saveSettings(settings: AgentSettingsDto): Promise<AgentSettingsDto> {
+  await setDoc(refs.settings(), {
+    ...settings,
+    updatedAt: serverTimestamp() as unknown as string,
   });
-}
-
-/**
- * Atomic full-replace of settings.json — always commits against the
- * freshest sha so external commits (e.g. scheduled.yml landing) don't
- * cause "Update is not a fast forward" errors for the admin user.
- */
-export async function saveSettingsAtomic(
-  token: string,
-  settings: AgentSettingsDto,
-  commitMessage: string,
-): Promise<AgentSettingsDto> {
-  const client = createGithubClient(token);
-  const { next } = await commitJsonAtomic<AgentSettingsDto>(
-    client,
-    CONFIG.settingsPath,
-    (raw) => mergeSettings(JSON.parse(raw) as Partial<AgentSettingsDto>),
-    () => DEFAULT_SETTINGS,
-    () => ({ next: settings, message: commitMessage }),
-  );
-  return next;
+  return settings;
 }
