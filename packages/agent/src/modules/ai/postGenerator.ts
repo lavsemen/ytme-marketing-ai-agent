@@ -1,7 +1,7 @@
 import type { LlmClient } from './llmClient.js';
 import { extractJson } from './anthropicClient.js';
 import { MarketingPostSchema, type MarketingPost } from '../../types/post.js';
-import type { MatchedCollections } from '../../types/catalogPage.js';
+import type { CatalogPage, MatchedCollections } from '../../types/catalogPage.js';
 import type { TravelInsight } from '../../types/insight.js';
 import type { NewsItem } from '../../types/news.js';
 import { logger } from '../../utils/logger.js';
@@ -54,7 +54,10 @@ export async function generatePost(
     throw new Error(`PostGenerator: schema validation failed: ${result.error.message}`);
   }
 
-  return result.data;
+  return {
+    ...result.data,
+    marketingText: enrichMarketingTextWithCollections(result.data.marketingText, matched),
+  };
 }
 
 const FactCheckResultSchema = z.object({
@@ -136,4 +139,42 @@ export async function factCheckPost(
   }
 
   return result.data;
+}
+
+function collectionMentioned(text: string, page: CatalogPage): boolean {
+  const lower = text.toLowerCase();
+  return lower.includes(page.url.toLowerCase()) || lower.includes(page.title.toLowerCase());
+}
+
+function formatCollectionLine(page: CatalogPage): string {
+  const count =
+    page.tourCount !== undefined ? ` — ${page.tourCount} туров` : '';
+  return `«${page.title}»${count}: ${page.url}`;
+}
+
+/** Ensures matched catalog pages appear in the post body (primary URL is mandatory). */
+export function enrichMarketingTextWithCollections(
+  text: string,
+  matched: MatchedCollections,
+): string {
+  const trimmed = text.trim();
+  const lines: string[] = [];
+
+  if (!trimmed.includes(matched.primary.url)) {
+    lines.push(formatCollectionLine(matched.primary));
+  }
+
+  const seen = new Set<string>([matched.primary.url]);
+  for (const page of matched.related) {
+    if (lines.length >= 4) break;
+    if (seen.has(page.url)) continue;
+    seen.add(page.url);
+    if (!collectionMentioned(trimmed, page)) {
+      lines.push(formatCollectionLine(page));
+    }
+  }
+
+  if (lines.length === 0) return trimmed;
+
+  return `${trimmed}\n\nПодборки YouTravel.me:\n${lines.map((line) => `• ${line}`).join('\n')}`;
 }

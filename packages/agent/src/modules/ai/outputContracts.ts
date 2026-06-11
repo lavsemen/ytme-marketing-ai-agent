@@ -31,7 +31,7 @@ export const POST_GENERATOR_OUTPUT_CONTRACT = `Ответ: ТОЛЬКО один
 
 {
   "marketingTitle": string,    // до 80 символов
-  "marketingText": string,     // 2-4 абзаца, без списка туров
+  "marketingText": string,     // 2-4 абзаца; в конце — названия и URL подборок из входа (primaryCollection + до 3 related)
   "seoTitle": string,          // до 60 символов
   "seoDescription": string,    // 140-160 символов
   "ogTitle": string,
