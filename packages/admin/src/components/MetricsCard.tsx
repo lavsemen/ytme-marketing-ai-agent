@@ -5,11 +5,17 @@ import { refs, type MetricsDoc } from '../api/db';
 
 interface MetricsCardProps {
   slug: string;
+  collectionTitleById?: Record<string, string>;
+  /** @deprecated use collectionTitleById */
   tourTitleById?: Record<string, string>;
 }
 
-/** Live view of `metrics/{slug}` — total views and per-tour click counters. */
-export function MetricsCard({ slug, tourTitleById }: MetricsCardProps): ReactNode {
+/** Live view of `metrics/{slug}` — total views and per-collection click counters. */
+export function MetricsCard({
+  slug,
+  collectionTitleById,
+  tourTitleById,
+}: MetricsCardProps): ReactNode {
   const [metrics, setMetrics] = useState<MetricsDoc | null>(null);
   const [exists, setExists] = useState<boolean>(false);
 
@@ -26,8 +32,9 @@ export function MetricsCard({ slug, tourTitleById }: MetricsCardProps): ReactNod
     return () => unsub();
   }, [slug]);
 
+  const titleById = collectionTitleById ?? tourTitleById;
   const clicks = metrics?.clicksByTour ?? {};
-  const tourEntries = Object.entries(clicks).sort((a, b) => b[1] - a[1]);
+  const clickEntries = Object.entries(clicks).sort((a, b) => b[1] - a[1]);
 
   return (
     <section className="ds-card">
@@ -52,26 +59,26 @@ export function MetricsCard({ slug, tourTitleById }: MetricsCardProps): ReactNod
         <div className="flex items-center gap-3 rounded-lg bg-surface-2 px-3 py-3">
           <MousePointerClick size={18} className="text-lime" />
           <div>
-            <div className="text-xs text-ink-muted">Клики по турам</div>
+            <div className="text-xs text-ink-muted">Клики по подборкам</div>
             <div className="font-display text-2xl font-bold leading-none text-ink-primary">
-              {tourEntries.reduce((sum, [, n]) => sum + n, 0)}
+              {clickEntries.reduce((sum, [, n]) => sum + n, 0)}
             </div>
           </div>
         </div>
       </div>
-      {tourEntries.length > 0 && (
+      {clickEntries.length > 0 && (
         <div className="mt-4">
           <p className="text-xxs uppercase tracking-wider text-ink-faint">
-            По турам ({tourEntries.length})
+            По подборкам ({clickEntries.length})
           </p>
           <ul className="mt-2 divide-y divide-line-subtle">
-            {tourEntries.map(([tourId, count]) => (
+            {clickEntries.map(([id, count]) => (
               <li
-                key={tourId}
+                key={id}
                 className="flex items-center justify-between py-2 text-xs"
               >
                 <span className="truncate text-ink-secondary">
-                  {tourTitleById?.[tourId] ?? tourId}
+                  {titleById?.[id] ?? id}
                 </span>
                 <span className="font-mono font-semibold text-ink-primary">{count}</span>
               </li>

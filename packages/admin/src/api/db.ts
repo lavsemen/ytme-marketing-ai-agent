@@ -60,6 +60,14 @@ export interface RunDoc {
   htmlUrl?: string | null;
 }
 
+export interface CatalogPagesDoc {
+  csvGzipBase64: string;
+  rowCount: number;
+  filteredCount: number;
+  fileName?: string;
+  updatedAt: string;
+}
+
 export interface MetricsDoc {
   views: number;
   clicksByTour: Record<string, number>;
@@ -88,6 +96,8 @@ export interface ResultDoc {
   newsTitle?: string;
   country?: string | null;
   toursCount?: number;
+  collectionsCount?: number;
+  collectionUrl?: string | null;
   landingUrl?: string | null;
   rejectionReason?: string | null;
   rejectionMessage?: string | null;
@@ -122,6 +132,11 @@ export const refs = {
   settings(): DocumentReference<AgentSettingsDto> {
     return doc(getDb(), 'config', 'settings').withConverter(
       passthroughConverter<AgentSettingsDto>(),
+    );
+  },
+  catalogPages(): DocumentReference<CatalogPagesDoc> {
+    return doc(getDb(), 'config', 'catalog-pages').withConverter(
+      passthroughConverter<CatalogPagesDoc>(),
     );
   },
   runs(): CollectionReference<RunDoc> {

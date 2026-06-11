@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { RotateCcw, Save, AlertTriangle } from 'lucide-react';
 import {
@@ -40,8 +40,10 @@ export function SettingsPage(): ReactNode {
   const [tab, setTab] = useState<TabId>('pipeline');
 
   useEffect(() => {
-    if (query.data) setDraft(query.data.settings);
-  }, [query.data]);
+    if (query.data && draft === null) {
+      setDraft(query.data.settings);
+    }
+  }, [query.data, draft]);
 
   const dirty = useMemo(() => {
     if (!query.data || !draft) return false;
@@ -50,7 +52,10 @@ export function SettingsPage(): ReactNode {
 
   const saveMutation = useMutation({
     mutationFn: (settings: AgentSettingsDto) => saveSettings(settings),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['settings'] }),
+    onSuccess: (saved) => {
+      setDraft(saved);
+      qc.invalidateQueries({ queryKey: ['settings'] });
+    },
     onError: () => qc.invalidateQueries({ queryKey: ['settings'] }),
   });
 
@@ -181,11 +186,11 @@ interface FieldProps {
 
 function Field({ label, hint, children }: FieldProps): ReactNode {
   return (
-    <label className="block">
+    <div className="block">
       <span className="ds-label">{label}</span>
       {children}
       {hint && <span className="mt-1.5 block text-xs text-ink-muted">{hint}</span>}
-    </label>
+    </div>
   );
 }
 
@@ -276,19 +281,28 @@ function StringListInput({
   placeholder?: string;
   hint?: string;
 }): ReactNode {
+  const [text, setText] = useState(() => value.join('\n'));
+  const internalEditRef = useRef(false);
+
+  useEffect(() => {
+    if (internalEditRef.current) {
+      internalEditRef.current = false;
+      return;
+    }
+    setText(value.join('\n'));
+  }, [value]);
+
   return (
     <div className="space-y-1">
       <textarea
-        value={value.join('\n')}
+        value={text}
         placeholder={placeholder ?? 'По одной записи на строку'}
-        onChange={(e) =>
-          onChange(
-            e.target.value
-              .split('\n')
-              .map((s) => s.trim())
-              .filter((s) => s.length > 0),
-          )
-        }
+        onChange={(e) => {
+          const next = e.target.value;
+          internalEditRef.current = true;
+          setText(next);
+          onChange(next.split('\n'));
+        }}
         className="ds-input min-h-[110px] font-mono text-xs"
       />
       {hint && <p className="text-xs text-ink-muted">{hint}</p>}

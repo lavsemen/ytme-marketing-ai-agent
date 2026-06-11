@@ -165,7 +165,7 @@ describe('zod schemas', () => {
         createdAt: new Date().toISOString(),
         newsTitle: 'Hello',
         country: 'Китай',
-        toursCount: 8,
+        collectionsCount: 8,
         landingUrl: 'https://example.com/landings/china-abc/',
         status: 'success',
       });
@@ -177,7 +177,7 @@ describe('zod schemas', () => {
         slug: 'rejected-12345',
         createdAt: new Date().toISOString(),
         newsTitle: 'Run skipped (low_confidence)',
-        toursCount: 0,
+        collectionsCount: 0,
         status: 'rejected',
         rejectionReason: 'low_confidence',
         rejectionMessage: 'confidence=0.25',
@@ -194,7 +194,7 @@ describe('zod schemas', () => {
         slug: 'legacy',
         createdAt: new Date().toISOString(),
         newsTitle: 'Legacy',
-        toursCount: 5,
+        collectionsCount: 5,
         landingUrl: 'https://example.com/landings/legacy/',
       });
       expect(parsed.success).toBe(true);

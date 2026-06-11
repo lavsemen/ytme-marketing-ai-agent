@@ -212,7 +212,12 @@ export function ResultDetailPage(): ReactNode {
 
       <MetricsCard
         slug={data.landing.slug}
-        tourTitleById={Object.fromEntries(data.tours.map((t) => [t.id, t.title]))}
+        collectionTitleById={Object.fromEntries(
+          data.collections.map((c) => [
+            c.url.replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 80),
+            c.title,
+          ]),
+        )}
       />
 
       <section className="grid gap-6 md:grid-cols-2">
@@ -242,27 +247,40 @@ export function ResultDetailPage(): ReactNode {
       </section>
 
       <section>
-        <h3 className="ds-label mb-3">Туры ({data.tours.length})</h3>
+        <h3 className="ds-label mb-3">
+          Подборки ({data.collections.length})
+          {data.primaryCollection && (
+            <span className="ml-2 text-xs font-normal normal-case text-ink-muted">
+              CTA:{' '}
+              <a
+                href={data.primaryCollection.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-lime hover:underline"
+              >
+                {data.primaryCollection.title}
+              </a>
+            </span>
+          )}
+        </h3>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {data.tours.map((tour) => (
+          {data.collections.map((page) => (
             <a
-              key={tour.id}
-              href={tour.url}
+              key={page.url}
+              href={page.url}
               target="_blank"
               rel="noopener noreferrer"
               className="overflow-hidden rounded-xl bg-surface-2 border border-line-subtle transition-all duration-200 hover:border-line-lime hover:-translate-y-0.5 hover:shadow-lime-glow"
             >
-              {tour.imageUrl ? (
-                <img src={tour.imageUrl} alt={tour.title} className="h-36 w-full object-cover" />
-              ) : (
-                <div className="h-36 bg-gradient-to-br from-surface-3 to-surface-4" />
-              )}
+              <div className="h-24 bg-gradient-to-br from-surface-3 to-surface-4" />
               <div className="p-3">
-                <p className="text-sm font-semibold text-ink-primary">{tour.title}</p>
-                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
-                  {tour.rating != null && <span className="text-lime">★ {tour.rating.toFixed(1)}</span>}
-                  {tour.duration && <span>{tour.duration}</span>}
-                  {tour.price && <span className="font-semibold text-ink-primary">{tour.price}</span>}
+                <p className="text-sm font-semibold text-ink-primary">{page.title}</p>
+                <p className="mt-1 text-xs text-ink-muted">{page.purpose}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
+                  {page.tourCount != null && (
+                    <span className="font-semibold text-ink-primary">{page.tourCount} туров</span>
+                  )}
+                  <span>{page.pageType}</span>
                 </div>
               </div>
             </a>

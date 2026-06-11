@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { TravelInsightSchema } from './insight.js';
 import { LandingInfoSchema } from './landing.js';
-import { TourSchema } from './tour.js';
+import { CatalogPageSchema } from './catalogPage.js';
 
 const SettingsSnapshotSchema = z
   .object({
@@ -30,7 +30,8 @@ export const PipelineResultSchema = z.object({
     summary: z.string(),
   }),
   insight: TravelInsightSchema,
-  tours: z.array(TourSchema).min(1),
+  primaryCollection: CatalogPageSchema,
+  collections: z.array(CatalogPageSchema).min(1),
   post: z.object({
     marketingTitle: z.string(),
     marketingText: z.string(),
@@ -49,7 +50,7 @@ export const REJECTION_REASONS = [
   'low_confidence',
   'unknown_country',
   'blocked_country',
-  'no_tours',
+  'no_collections',
   'llm_error',
 ] as const;
 export type RejectionReason = (typeof REJECTION_REASONS)[number];
@@ -86,7 +87,8 @@ export const ResultMetaSchema = z.object({
   createdAt: z.string().datetime(),
   newsTitle: z.string(),
   country: z.string().optional(),
-  toursCount: z.number().int().min(0).default(0),
+  collectionsCount: z.number().int().min(0).default(0),
+  collectionUrl: z.string().url().optional(),
   landingUrl: z.string().url().optional(),
   status: z.enum(['success', 'rejected']).default('success'),
   rejectionReason: z.enum(REJECTION_REASONS).optional(),

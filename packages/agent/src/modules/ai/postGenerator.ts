@@ -1,7 +1,7 @@
 import type { LlmClient } from './llmClient.js';
 import { extractJson } from './anthropicClient.js';
 import { MarketingPostSchema, type MarketingPost } from '../../types/post.js';
-import type { Tour } from '../../types/tour.js';
+import type { MatchedCollections } from '../../types/catalogPage.js';
 import type { TravelInsight } from '../../types/insight.js';
 import type { NewsItem } from '../../types/news.js';
 import { logger } from '../../utils/logger.js';
@@ -16,27 +16,19 @@ export interface GeneratePostOptions {
 export async function generatePost(
   llm: LlmClient,
   insight: TravelInsight,
-  tours: Tour[],
+  matched: MatchedCollections,
   options: GeneratePostOptions,
 ): Promise<MarketingPost> {
-  if (tours.length === 0) {
-    throw new Error('generatePost: empty tours list');
-  }
-
   const payload = {
     insight,
-    tours: tours.map((t) => ({
-      id: t.id,
-      title: t.title,
-      url: t.url,
-      shortDescription: t.shortDescription,
-      price: t.price,
-      duration: t.duration,
-      country: t.country,
-    })),
+    primaryCollection: matched.primary,
+    relatedCollections: matched.related,
   };
 
-  logger.info({ tours: tours.length, country: insight.country }, 'Generating marketing post');
+  logger.info(
+    { primary: matched.primary.title, related: matched.related.length, country: insight.country },
+    'Generating marketing post',
+  );
 
   const raw = await llm.complete({
     system: options.systemPrompt,
@@ -97,7 +89,7 @@ export interface FactCheckResult {
 export interface FactCheckOptions {
   news: NewsItem;
   post: MarketingPost;
-  tours: Tour[];
+  matched: MatchedCollections;
   systemPrompt: string;
   temperature?: number;
   maxTokens?: number;
@@ -110,7 +102,11 @@ export async function factCheckPost(
   const payload = {
     sourceText: `${options.news.title}\n\n${options.news.summary ?? options.news.text ?? ''}`,
     marketingText: options.post.marketingText,
-    tours: options.tours.map((t) => ({ id: t.id, title: t.title, url: t.url })),
+    primaryCollection: options.matched.primary,
+    relatedCollections: options.matched.related.map((c) => ({
+      title: c.title,
+      url: c.url,
+    })),
   };
 
   logger.debug('Running fact-check pass');

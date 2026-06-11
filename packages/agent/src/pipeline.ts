@@ -11,10 +11,8 @@ import { AnthropicClient } from './modules/ai/anthropicClient.js';
 import { analyzeNews, pickTopInsight } from './modules/ai/newsAnalyzer.js';
 import { generatePost, factCheckPost } from './modules/ai/postGenerator.js';
 import { generateLandingContent } from './modules/ai/landingContentGenerator.js';
-import { createTourClient } from './modules/tours/index.js';
-import { sanitizeGeoFilter } from './modules/tours/youtravelClient.js';
-import { rankToursDetailed } from './modules/tours/tourRanker.js';
-import { applyTourFilters } from './modules/tours/tourFilters.js';
+import { loadCatalogPages } from './modules/catalog/parseCatalogCsv.js';
+import { rankCollections } from './modules/catalog/collectionRanker.js';
 import { generateLanding } from './modules/landing/landingGenerator.js';
 import type {
   PipelineResult,
@@ -90,7 +88,7 @@ const REJECTION_LABELS: Record<RejectionReason, string> = {
   low_confidence: 'Инфоповод слабо связан с travel (низкая уверенность LLM)',
   unknown_country: 'LLM не смог определить страну / направление',
   blocked_country: 'Страна в чёрном списке настроек',
-  no_tours: 'Подобрано слишком мало релевантных туров',
+  no_collections: 'Не найдена подходящая подборка в каталоге',
   llm_error: 'Ошибка анализа новостей LLM',
 };
 
@@ -307,11 +305,11 @@ async function runPipelineInner(
     );
   }
 
-  if (!sanitizeGeoFilter(topInsight.country)) {
+  if (!topInsight.country || topInsight.country.toLowerCase().trim() === 'unknown') {
     return persistRejection(
       buildRejection({
         reason: 'unknown_country',
-        details: `LLM вернул country="${topInsight.country}". Без направления туры подобрать нельзя.`,
+        details: `LLM вернул country="${topInsight.country}". Без направления подборку подобрать нельзя.`,
         ...baseRej(),
         news,
         insights,
@@ -320,51 +318,18 @@ async function runPipelineInner(
     );
   }
 
-  const tourClient = createTourClient(env);
-  const tourSearch: { country?: string; region?: string; city?: string; limit: number } = {
-    limit: settings.pipeline.tourSearchLimit,
-  };
-  const country = sanitizeGeoFilter(topInsight.country);
-  const region = sanitizeGeoFilter(topInsight.region);
-  const city = sanitizeGeoFilter(topInsight.city);
-  if (country) tourSearch.country = country;
-  if (region) tourSearch.region = region;
-  if (city) tourSearch.city = city;
-
-  const rawTours = await tourClient.search(tourSearch);
-  const countryMatchCount = rawTours.filter(
-    (t) => (t.country ?? '').toLowerCase().trim() === (topInsight.country ?? '').toLowerCase().trim(),
-  ).length;
-  logger.info(
-    {
-      total: rawTours.length,
-      countryMatch: countryMatchCount,
-      requested: { country, region, city },
-    },
-    'Tours fetched (API relevance check)',
-  );
-
-  const { kept: filteredTours, removed: filteredOut } = applyTourFilters(
-    rawTours,
-    settings.tourFilters,
-  );
-  if (filteredOut.length > 0) {
-    logger.info(
-      { removed: filteredOut.length, reasons: filteredOut.slice(0, 3).map((r) => r.reason) },
-      'Tours filtered out by tourFilters',
-    );
-  }
-
-  const ranked = rankToursDetailed(filteredTours, topInsight, {
-    minCount: settings.pipeline.minTours,
-    maxCount: settings.pipeline.maxTours,
+  const catalogPages = await loadCatalogPages();
+  const matched = rankCollections(catalogPages, topInsight, {
+    hint,
+    minScore: 12,
+    maxRelated: settings.pipeline.maxTours,
   });
-  const tours = ranked.tours;
-  if (tours.length < settings.pipeline.minTours) {
+
+  if (!matched.primary) {
     return persistRejection(
       buildRejection({
-        reason: 'no_tours',
-        details: `После ранжирования и фильтров осталось ${tours.length} туров (нужно минимум ${settings.pipeline.minTours}) для страны "${topInsight.country}".`,
+        reason: 'no_collections',
+        details: `Не найдена подходящая страница подборки для "${topInsight.country}" (score=${matched.score}). Загрузите/обновите CSV подборок в админке.`,
         ...baseRej(),
         news,
         insights,
@@ -372,24 +337,28 @@ async function runPipelineInner(
       }),
     );
   }
+
   logger.info(
     {
-      count: tours.length,
-      keywords: {
-        primary: ranked.keywords.primary,
-        secondary: ranked.keywords.secondary,
-        detectedLocations: ranked.keywords.detectedLocations,
-      },
-      topByScore: ranked.debug,
+      primary: matched.primary.title,
+      primaryUrl: matched.primary.url,
+      related: matched.related.length,
+      score: matched.score,
+      topMatches: matched.debug,
     },
-    'Tours ranked (top-5 with score breakdown)',
+    'Catalog collections ranked',
   );
 
-  const post = await generatePost(llm, topInsight, tours, {
-    systemPrompt: effective.postGenerator,
-    temperature: settings.llm.temperature.post,
-    maxTokens: settings.llm.maxTokens,
-  });
+  const post = await generatePost(
+    llm,
+    topInsight,
+    { primary: matched.primary, related: matched.related },
+    {
+      systemPrompt: effective.postGenerator,
+      temperature: settings.llm.temperature.post,
+      maxTokens: settings.llm.maxTokens,
+    },
+  );
   logger.info('Marketing post generated');
 
   const sourceNews = pickNewsForInsight(news, topInsight.sourceUrl);
@@ -398,7 +367,7 @@ async function runPipelineInner(
     const factCheck = await factCheckPost(llm, {
       news: sourceNews,
       post,
-      tours,
+      matched: { primary: matched.primary, related: matched.related },
       systemPrompt: effective.factCheck,
       temperature: settings.llm.temperature.factcheck,
       maxTokens: 1024,
@@ -421,7 +390,7 @@ async function runPipelineInner(
   const landingContent = await generateLandingContent(llm, {
     insight: topInsight,
     post,
-    tours,
+    matched: { primary: matched.primary, related: matched.related },
     systemPrompt: effective.landingContent,
     temperature: settings.llm.temperature.landing,
     maxTokens: settings.llm.maxTokens,
@@ -439,13 +408,13 @@ async function runPipelineInner(
     insight: topInsight,
     post,
     news: sourceNews,
-    tours,
+    primaryCollection: matched.primary,
+    collections: matched.related,
     content: landingContent,
     baseUrl: env.LANDING_BASE_URL,
   });
 
-  const heroImageUrl =
-    sourceNews.imageUrl ?? tours.find((t) => t.imageUrl)?.imageUrl;
+  const heroImageUrl = sourceNews.imageUrl;
 
   const result: PipelineResult = {
     status: 'success',
@@ -456,7 +425,8 @@ async function runPipelineInner(
       summary: sourceNews.summary ?? topInsight.shortSummary,
     },
     insight: topInsight,
-    tours,
+    primaryCollection: matched.primary,
+    collections: matched.related,
     post: {
       marketingTitle: post.marketingTitle,
       marketingText: post.marketingText,

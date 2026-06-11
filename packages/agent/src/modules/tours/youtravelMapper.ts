@@ -91,7 +91,7 @@ export function mapSerpItemToTour(item: SerpItem, opts: MapperOptions): Tour {
     tour.imageUrl = buildAbsoluteUrl(opts.imageBaseUrl, item.preview_image);
   }
 
-  const desc = cleanDescription(item.description);
+  const desc = cleanDescription(item.description ?? undefined);
   if (desc) tour.shortDescription = desc;
 
   const minPriceDate = item.dates?.group_min_price ?? item.dates?.slice?.[0];

@@ -8,6 +8,7 @@ import {
   Settings,
   AlertTriangle,
   CalendarClock,
+  BookOpen,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 
@@ -21,6 +22,7 @@ const navItems = [
   { to: '/sources', label: 'Источники', icon: Database },
   { to: '/prompts', label: 'Промпты', icon: MessageSquareText },
   { to: '/settings', label: 'Настройки', icon: Settings },
+  { to: '/catalog', label: 'Подборки', icon: BookOpen },
   { to: '/schedules', label: 'Расписания', icon: CalendarClock },
   { to: '/generate', label: 'Запустить', icon: Play },
   { to: '/history', label: 'История', icon: History },

@@ -12,7 +12,7 @@ import { getEnv } from '../../utils/env.js';
 import { ensurePlaceholderAsset } from './assets.js';
 import { ensureSharedAssets } from './shared.js';
 import type { LandingInfo } from '../../types/landing.js';
-import type { Tour } from '../../types/tour.js';
+import type { CatalogPage } from '../../types/catalogPage.js';
 import type { TravelInsight } from '../../types/insight.js';
 import type { MarketingPost } from '../../types/post.js';
 import type { NewsItem } from '../../types/news.js';
@@ -24,7 +24,8 @@ export interface GenerateLandingInput {
   insight: TravelInsight;
   post: MarketingPost;
   news: NewsItem;
-  tours: Tour[];
+  primaryCollection: CatalogPage;
+  collections: CatalogPage[];
   content: LandingContent;
   baseUrl: string;
 }
@@ -43,9 +44,7 @@ async function listExistingSlugs(): Promise<Set<string>> {
 }
 
 function pickHeroImage(input: GenerateLandingInput): string | undefined {
-  if (input.news.imageUrl) return input.news.imageUrl;
-  const firstTour = input.tours.find((t) => t.imageUrl);
-  return firstTour?.imageUrl;
+  return input.news.imageUrl;
 }
 
 export async function generateLanding(
@@ -68,7 +67,8 @@ export async function generateLanding(
     post: input.post,
     insight: input.insight,
     news: input.news,
-    tours: input.tours,
+    primaryCollection: input.primaryCollection,
+    collections: input.collections,
     content: input.content,
     ...(pickHeroImage(input) ? { heroImageUrl: pickHeroImage(input)! } : {}),
   };
@@ -95,11 +95,6 @@ export async function landingExists(slug: string): Promise<boolean> {
   return pathExists(path.join(LANDINGS_DIR, slug, 'index.html'));
 }
 
-/**
- * Builds the metrics tracker config from env. Returns `undefined` when any
- * required key is missing, so the landing script silently skips tracking
- * for repos that haven't configured Firestore yet.
- */
 function buildMetricsConfig(slug: string): MetricsConfig | undefined {
   let env;
   try {

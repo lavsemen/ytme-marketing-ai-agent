@@ -110,6 +110,31 @@ export interface SettingsFile {
   settings: AgentSettingsDto;
 }
 
+function normalizeStringList(items: string[]): string[] {
+  return items.map((line) => line.trim()).filter((line) => line.length > 0);
+}
+
+function normalizeSettingsForSave(settings: AgentSettingsDto): AgentSettingsDto {
+  return {
+    ...settings,
+    brand: {
+      ...settings.brand,
+      bannedWords: normalizeStringList(settings.brand.bannedWords),
+      requiredHashtags: normalizeStringList(settings.brand.requiredHashtags),
+    },
+    geo: {
+      prioritized: normalizeStringList(settings.geo.prioritized),
+      blocked: normalizeStringList(settings.geo.blocked),
+    },
+    seasonalPriorities: {
+      '12-02': normalizeStringList(settings.seasonalPriorities['12-02']),
+      '03-05': normalizeStringList(settings.seasonalPriorities['03-05']),
+      '06-08': normalizeStringList(settings.seasonalPriorities['06-08']),
+      '09-11': normalizeStringList(settings.seasonalPriorities['09-11']),
+    },
+  };
+}
+
 function mergeSettings(over: Partial<AgentSettingsDto>): AgentSettingsDto {
   return {
     pipeline: { ...DEFAULT_SETTINGS.pipeline, ...(over.pipeline ?? {}) },
@@ -136,9 +161,10 @@ export async function loadSettings(): Promise<SettingsFile> {
 
 /** Full-replace of config/settings. Firestore is the source of truth. */
 export async function saveSettings(settings: AgentSettingsDto): Promise<AgentSettingsDto> {
+  const normalized = normalizeSettingsForSave(settings);
   await setDoc(refs.settings(), {
-    ...settings,
+    ...normalized,
     updatedAt: serverTimestamp() as unknown as string,
   });
-  return settings;
+  return normalized;
 }

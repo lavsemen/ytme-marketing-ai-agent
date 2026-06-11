@@ -17,7 +17,7 @@ export type RejectionReason =
   | 'low_confidence'
   | 'unknown_country'
   | 'blocked_country'
-  | 'no_tours'
+  | 'no_collections'
   | 'llm_error';
 
 export interface ResultMeta {
@@ -25,7 +25,10 @@ export interface ResultMeta {
   createdAt: string;
   newsTitle: string;
   country?: string;
+  /** @deprecated legacy field — use collectionsCount */
   toursCount: number;
+  collectionsCount: number;
+  collectionUrl?: string;
   landingUrl?: string;
   status?: ResultStatus;
   rejectionReason?: RejectionReason;
@@ -61,21 +64,21 @@ export interface ResultMetaJson {
   };
 }
 
+export interface CatalogPageJson {
+  url: string;
+  title: string;
+  pageClass: string;
+  pageType: string;
+  purpose: string;
+  tourCount?: number;
+}
+
 export interface PipelineResultJson {
   status?: 'success';
   news: { title: string; sourceName: string; sourceUrl: string; summary: string };
   insight: InsightJson;
-  tours: {
-    id: string;
-    title: string;
-    url: string;
-    imageUrl?: string;
-    shortDescription?: string;
-    price?: string;
-    rating?: number;
-    duration?: string;
-    dates?: string[];
-  }[];
+  primaryCollection: CatalogPageJson;
+  collections: CatalogPageJson[];
   post: {
     marketingTitle: string;
     marketingText: string;
@@ -112,7 +115,7 @@ export const REJECTION_REASON_LABELS: Record<RejectionReason, string> = {
   low_confidence: 'Низкая релевантность',
   unknown_country: 'Не определена страна',
   blocked_country: 'Страна в чёрном списке',
-  no_tours: 'Мало туров',
+  no_collections: 'Нет подборок',
   llm_error: 'Ошибка LLM',
 };
 
@@ -167,6 +170,8 @@ interface ResultDocLike {
   newsTitle?: string;
   country?: string | null;
   toursCount?: number;
+  collectionsCount?: number;
+  collectionUrl?: string | null;
   landingUrl?: string | null;
   rejectionReason?: RejectionReason | null;
   rejectionMessage?: string | null;
@@ -174,12 +179,15 @@ interface ResultDocLike {
 }
 
 function docToResultMeta(data: ResultDocLike, fallbackSlug: string): ResultMeta {
+  const collectionsCount = data.collectionsCount ?? data.toursCount ?? 0;
   return {
     slug: data.slug ?? fallbackSlug,
     createdAt: data.createdAt ?? new Date().toISOString(),
     newsTitle: data.newsTitle ?? '',
     ...(data.country ? { country: data.country } : {}),
-    toursCount: data.toursCount ?? 0,
+    toursCount: collectionsCount,
+    collectionsCount,
+    ...(data.collectionUrl ? { collectionUrl: data.collectionUrl } : {}),
     ...(data.landingUrl ? { landingUrl: data.landingUrl } : {}),
     status: data.status ?? 'success',
     ...(data.rejectionReason ? { rejectionReason: data.rejectionReason } : {}),

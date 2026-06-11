@@ -90,22 +90,29 @@ const ctx: LandingTemplateContext = {
     sourceId: 'example',
     summary: 'Китай продлил безвизовый режим для граждан России до 31 декабря 2027 года.',
   },
-  tours: [
+  primaryCollection: {
+    url: 'https://youtravel.me/tours/continent/китай',
+    title: 'Туры в Китай',
+    pageClass: 'континенты',
+    pageType: 'континенты',
+    purpose: 'Целевая страница каталога',
+    tourCount: 120,
+  },
+  collections: [
     {
-      id: '48212',
-      title: 'Китай. Горы Аватара и Гуйлинь',
-      url: 'https://youtravel.me/tours/48212',
-      imageUrl: 'https://example.com/t1.jpg',
-      price: 'от 185 000 ₽',
-      rating: 4.9,
-      duration: '11 дней',
-      dates: ['15 окт 2026', '02 ноя 2026'],
-      shortDescription: 'Горы Чжанцзяцзе и Гуйлинь.',
+      url: 'https://youtravel.me/tours/continent/китай',
+      title: 'Туры в Китай',
+      pageClass: 'континенты',
+      pageType: 'континенты',
+      purpose: 'Целевая страница каталога',
+      tourCount: 120,
     },
     {
-      id: '51267',
-      title: 'Классический Китай',
-      url: 'https://youtravel.me/tours/51267',
+      url: 'https://youtravel.me/tours/continent/китай/month-oct',
+      title: 'Туры в Китай в октябре',
+      pageClass: 'континенты',
+      pageType: 'SEO-фильтр',
+      purpose: 'Месяцы - октябрь',
     },
   ],
   content,
@@ -117,7 +124,7 @@ describe('landing templates (brand kit)', () => {
     expect(html).toMatch(/<!DOCTYPE html>/i);
     expect(html).toContain('<html lang="ru">');
     expect(html).toContain('Китай теперь ближе: безвиз продлили');
-    expect(html).toContain('href="https://youtravel.me/tours/48212"');
+    expect(html).toContain('href="https://youtravel.me/tours/continent/китай"');
   });
 
   it('loads shared brand stylesheets', () => {
@@ -179,10 +186,10 @@ describe('landing templates (brand kit)', () => {
     expect(parsed.about.name).toBe('Китай');
   });
 
-  it('renders tour cards', () => {
+  it('renders collection cards', () => {
     const html = buildIndexHtml(ctx);
     expect((html.match(/class="tour-card"/g) ?? []).length).toBe(2);
-    expect(html).toContain('Смотреть тур');
+    expect(html).toContain('Открыть подборку');
   });
 
   it('escapes HTML in user-controlled fields', () => {

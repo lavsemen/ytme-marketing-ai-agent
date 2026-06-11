@@ -16,7 +16,7 @@ const REJECTION_LABELS: Record<RejectionReason, string> = {
   low_confidence: 'Низкая релевантность',
   unknown_country: 'Не определена страна',
   blocked_country: 'Страна в чёрном списке',
-  no_tours: 'Мало туров',
+  no_collections: 'Нет подборок',
   llm_error: 'Ошибка LLM',
 };
 
@@ -72,7 +72,7 @@ export async function notifySlackSuccess(result: PipelineResult): Promise<void> 
   const cfg = slackConfig();
   if (!cfg) return;
 
-  const { post, news, insight, landing, tours } = result;
+  const { post, news, insight, landing, primaryCollection, collections } = result;
   const title = escapeMrkdwn(post.marketingTitle);
   const bodyText = escapeMrkdwn(truncate(post.marketingText, MAX_SECTION_CHARS));
   const country = escapeMrkdwn(insight.country || '—');
@@ -90,7 +90,8 @@ export async function notifySlackSuccess(result: PipelineResult): Promise<void> 
       type: 'section',
       fields: [
         { type: 'mrkdwn', text: `*Страна:*\n${country}` },
-        { type: 'mrkdwn', text: `*Туров:*\n${tours.length}` },
+        { type: 'mrkdwn', text: `*Подборок:*\n${collections.length}` },
+        { type: 'mrkdwn', text: `*CTA:*\n<${primaryCollection.url}|${escapeMrkdwn(primaryCollection.title)}>` },
         { type: 'mrkdwn', text: `*Новость:*\n${escapeMrkdwn(news.title)}` },
       ],
     },

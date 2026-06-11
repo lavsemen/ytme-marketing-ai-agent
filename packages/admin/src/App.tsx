@@ -10,6 +10,7 @@ import { ResultDetailPage } from './pages/ResultDetail';
 import { PromptsPage } from './pages/Prompts';
 import { SettingsPage } from './pages/Settings';
 import { SchedulesPage } from './pages/Schedules';
+import { CatalogPage } from './pages/Catalog';
 import { useAuth } from './hooks/useAuth';
 import { repoConfigError } from './lib/config';
 
@@ -76,6 +77,7 @@ export default function App(): ReactNode {
         <Route path="/prompts" element={<PromptsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/schedules" element={<SchedulesPage />} />
+        <Route path="/catalog" element={<CatalogPage />} />
         <Route path="/generate" element={<GeneratePage />} />
         <Route path="/runs/:runId" element={<RunStatusPage />} />
         <Route path="/history" element={<HistoryPage />} />

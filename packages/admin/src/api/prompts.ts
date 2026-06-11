@@ -67,8 +67,8 @@ function normalizePrompts(raw: Partial<PromptsDto>): PromptsDto {
   const out = { ...DEFAULT_PROMPTS };
   for (const key of PROMPT_KEYS) {
     const val = raw[key];
-    if (typeof val === 'string' && val.trim()) {
-      out[key] = val.trim();
+    if (typeof val === 'string' && val.trim().length > 0) {
+      out[key] = val;
     }
   }
   return out;

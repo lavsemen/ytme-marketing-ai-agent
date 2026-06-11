@@ -64,6 +64,8 @@
   select,
   textarea {
     color-scheme: dark;
+    text-transform: none;
+    letter-spacing: normal;
   }
   /* Make number-input spinner buttons less obtrusive on dark bg */
   input[type='number']::-webkit-inner-spin-button,
@@ -132,6 +134,10 @@
   }
   textarea.ds-input {
     @apply min-h-[96px] resize-y;
+    white-space: pre-wrap;
+    word-break: break-word;
+    text-transform: none;
+    letter-spacing: normal;
   }
   select.ds-input {
     @apply cursor-pointer appearance-none;

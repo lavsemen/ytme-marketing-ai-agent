@@ -1,4 +1,4 @@
-import type { Tour } from '../../types/tour.js';
+import type { CatalogPage } from '../../types/catalogPage.js';
 import type { TravelInsight } from '../../types/insight.js';
 import type { MarketingPost } from '../../types/post.js';
 import type { NewsItem } from '../../types/news.js';
@@ -10,7 +10,8 @@ export interface LandingTemplateContext {
   post: MarketingPost;
   insight: TravelInsight;
   news: NewsItem;
-  tours: Tour[];
+  primaryCollection: CatalogPage;
+  collections: CatalogPage[];
   content: LandingContent;
   heroImageUrl?: string;
 }
@@ -42,74 +43,39 @@ function paragraphs(text: string): string {
     .join('\n          ');
 }
 
-function transliterate(input: string): string {
-  const map: Record<string, string> = {
-    а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'yo', ж: 'zh', з: 'z',
-    и: 'i', й: 'i', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r',
-    с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sch',
-    ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya',
-  };
-  return input
-    .toLowerCase()
-    .split('')
-    .map((c) => map[c] ?? c)
-    .join('');
+function primaryCollectionUrl(ctx: LandingTemplateContext): string {
+  return ctx.primaryCollection.url;
 }
 
-function collectionUrlFor(country: string): string {
-  const slug = transliterate(country).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-  return `${YT_BASE}/tours/country/${encodeURIComponent(country)}${slug ? '' : ''}`;
+function collectionId(page: CatalogPage): string {
+  return page.url.replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 80);
 }
 
 function flightsUrlFor(): string {
   return 'https://www.aviasales.ru/';
 }
 
-function ratingHtml(tour: Tour): string {
-  if (!tour.rating) return '';
-  return `<span class="tc-rating">★ ${tour.rating.toFixed(1)}</span>`;
-}
-
-function tourCardHtml(tour: Tour): string {
-  const safeTitle = escapeHtml(tour.title);
-  const safeDesc = tour.shortDescription ? escapeHtml(tour.shortDescription) : '';
-  const safeUrl = escapeAttr(tour.url);
-  const imageUrl = tour.imageUrl ? escapeAttr(tour.imageUrl) : '';
-  const price = tour.price ? escapeHtml(tour.price.replace(/^от\s+/i, '')) : '';
-  const duration = tour.duration ? escapeHtml(tour.duration) : '';
-  const dates =
-    tour.dates && tour.dates.length > 0
-      ? escapeHtml(tour.dates.slice(0, 2).join(', '))
+function collectionCardHtml(page: CatalogPage): string {
+  const safeTitle = escapeHtml(page.title);
+  const safeDesc = page.purpose ? escapeHtml(page.purpose) : '';
+  const safeUrl = escapeAttr(page.url);
+  const count =
+    page.tourCount !== undefined
+      ? `<span class="tc-meta"><span>${escapeHtml(String(page.tourCount))} туров</span></span>`
       : '';
+  const safeId = escapeHtml(collectionId(page));
 
-  const metaParts = [duration, dates].filter(Boolean);
-  const metaHtml = metaParts
-    .map((p, i) =>
-      i === 0 ? `<span>${p}</span>` : `<span class="tc-dot"></span><span>${p}</span>`,
-    )
-    .join('');
-
-  const imageHtml = imageUrl
-    ? `<img src="${imageUrl}" alt="${safeTitle}" loading="lazy">`
-    : '';
-
-  const safeId = escapeHtml(String(tour.id ?? ''));
-  return `<article class="tour-card" data-tour-id="${safeId}">
+  return `<article class="tour-card" data-collection-id="${safeId}">
             <div class="tc-image">
-              ${imageHtml}
-              <span class="tc-badge">Авторский</span>
-              ${ratingHtml(tour)}
+              <span class="tc-badge">Подборка</span>
             </div>
             <div class="tc-body">
               <h3 class="tc-title">${safeTitle}</h3>
               ${safeDesc ? `<p class="tc-desc">${safeDesc}</p>` : ''}
-              ${metaHtml ? `<div class="tc-meta">${metaHtml}</div>` : ''}
+              ${count}
               <div class="tc-footer">
-                <div class="tc-price">
-                  ${price ? `<span class="tc-from">От</span><strong class="tc-amount">${price}</strong>` : ''}
-                </div>
                 <div class="tc-btns">
-                  <a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="btn-tc-main" data-tour-id="${safeId}">Смотреть тур</a>
+                  <a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="btn-tc-main" data-collection-id="${safeId}">Открыть подборку</a>
                 </div>
               </div>
             </div>
@@ -123,7 +89,7 @@ function navHtml(): string {
             <img src="${SHARED_PREFIX}/assets/logo-wordmark.svg" alt="YouTravel.me" class="nav-logo-svg" style="filter: brightness(0) invert(1);">
           </a>
           <div class="nav-links">
-            <a class="nav-link" href="#tours">Туры</a>
+            <a class="nav-link" href="#collections">Подборки</a>
             <a class="nav-link" href="#blog">Блог</a>
             <a class="nav-link" href="#faq">FAQ</a>
           </div>
@@ -151,8 +117,8 @@ function heroHtml(ctx: LandingTemplateContext): string {
           <h1 class="hero-h1">${escapeHtml(post.marketingTitle)}</h1>
           <p class="hero-sub">${escapeHtml(content.heroSubtitle)}</p>
           <div class="hero-actions">
-            <a href="#tours" class="btn-cta-primary">Смотреть туры</a>
-            <a href="${collectionUrlFor(ctx.insight.country)}" target="_blank" rel="noopener noreferrer" class="btn-cta-sec">Вся подборка</a>
+            <a href="#collections" class="btn-cta-primary">Смотреть подборки</a>
+            <a href="${escapeAttr(primaryCollectionUrl(ctx))}" target="_blank" rel="noopener noreferrer" class="btn-cta-sec">Главная подборка</a>
           </div>
           <div class="hero-stats">
             ${stats.join('\n            ')}
@@ -184,10 +150,11 @@ function whyNowHtml(content: LandingContent): string {
       </section>`;
 }
 
-function toursSectionHtml(ctx: LandingTemplateContext): string {
-  const { tours, content, insight } = ctx;
-  const cards = tours.map(tourCardHtml).join('\n          ');
-  return `<section class="section-bg tours-section" id="tours" data-screen-label="03 Tours">
+function collectionsSectionHtml(ctx: LandingTemplateContext): string {
+  const { collections, content } = ctx;
+  const cards = collections.map(collectionCardHtml).join('\n          ');
+  const primaryUrl = escapeAttr(primaryCollectionUrl(ctx));
+  return `<section class="section-bg tours-section" id="collections" data-screen-label="03 Collections">
         <div class="container">
           <div class="section-eyebrow">${escapeHtml(content.toursEyebrow)}</div>
           <h2 class="section-h2">${escapeHtml(content.toursTitle)}</h2>
@@ -196,16 +163,17 @@ function toursSectionHtml(ctx: LandingTemplateContext): string {
           ${cards}
           </div>
           <div class="tours-more">
-            <a href="${collectionUrlFor(insight.country)}" target="_blank" rel="noopener noreferrer" class="btn-outline">Смотреть все туры в подборке →</a>
+            <a href="${primaryUrl}" target="_blank" rel="noopener noreferrer" class="btn-outline">Открыть главную подборку →</a>
           </div>
         </div>
       </section>`;
 }
 
 function collectionBlockHtml(ctx: LandingTemplateContext): string {
-  const { content, insight, heroImageUrl } = ctx;
+  const { content, primaryCollection, heroImageUrl } = ctx;
+  const primaryUrl = escapeAttr(primaryCollection.url);
   const cover = heroImageUrl
-    ? `<img src="${escapeAttr(heroImageUrl)}" alt="${escapeAttr(insight.country)}" class="cc-photo" loading="lazy">`
+    ? `<img src="${escapeAttr(heroImageUrl)}" alt="${escapeAttr(primaryCollection.title)}" class="cc-photo" loading="lazy">`
     : '';
 
   return `<section class="collection-section" data-screen-label="04 Collection">
@@ -214,9 +182,9 @@ function collectionBlockHtml(ctx: LandingTemplateContext): string {
             <div class="section-eyebrow light-label">${escapeHtml(content.collectionEyebrow)}</div>
             <h2 class="section-h2 light-text">${escapeHtml(content.collectionTitle)}</h2>
             <p class="collection-desc">${escapeHtml(content.collectionDesc)}</p>
-            <a href="${collectionUrlFor(insight.country)}" target="_blank" rel="noopener noreferrer" class="btn-citron">Смотреть всю подборку →</a>
+            <a href="${primaryUrl}" target="_blank" rel="noopener noreferrer" class="btn-citron">Смотреть всю подборку →</a>
           </div>
-          <a href="${collectionUrlFor(insight.country)}" target="_blank" rel="noopener noreferrer" class="collection-card">
+          <a href="${primaryUrl}" target="_blank" rel="noopener noreferrer" class="collection-card">
             ${cover}
           </a>
         </div>
@@ -313,7 +281,7 @@ function forWhomHtml(ctx: LandingTemplateContext): string {
           <div class="fw-left">
             <div class="section-eyebrow">${escapeHtml(content.forWhomEyebrow)}</div>
             <h2 class="section-h2">${escapeHtml(content.forWhomTitle)}</h2>
-            <a href="${collectionUrlFor(insight.country)}" target="_blank" rel="noopener noreferrer" class="btn-purple fw-cta">Найти свой тур →</a>
+            <a href="${escapeAttr(primaryCollectionUrl(ctx))}" target="_blank" rel="noopener noreferrer" class="btn-purple fw-cta">Открыть подборку →</a>
           </div>
           <div class="fw-list">
             ${items}
@@ -382,8 +350,8 @@ function finalCtaHtml(ctx: LandingTemplateContext): string {
             <h2 class="fca-headline">${escapeHtml(content.finalCtaHeadline)}</h2>
             <p class="fca-sub">${escapeHtml(content.finalCtaSub)}</p>
             <div class="fca-actions">
-              <a href="#tours" class="btn-cta-primary">Смотреть туры</a>
-              <a href="${collectionUrlFor(insight.country)}" target="_blank" rel="noopener noreferrer" class="btn-cta-sec">Открыть подборку</a>
+              <a href="#collections" class="btn-cta-primary">Смотреть подборки</a>
+              <a href="${escapeAttr(primaryCollectionUrl(ctx))}" target="_blank" rel="noopener noreferrer" class="btn-cta-sec">Открыть подборку</a>
               <a href="${flightsUrlFor()}" target="_blank" rel="noopener noreferrer" class="btn-cta-ghost">Авиабилеты</a>
               <a href="#esim" class="btn-cta-ghost">Купить eSIM</a>
             </div>
@@ -400,7 +368,7 @@ function footerHtml(ctx: LandingTemplateContext): string {
             <img src="${SHARED_PREFIX}/assets/logo-wordmark.svg" alt="YouTravel.me" class="footer-logo-svg" style="filter: brightness(0) invert(0.85);">
           </a>
           <div class="footer-links">
-            <a href="${collectionUrlFor(insight.country)}" target="_blank" rel="noopener noreferrer">Туры в ${escapeHtml(insight.country)}</a>
+            <a href="${escapeAttr(primaryCollectionUrl(ctx))}" target="_blank" rel="noopener noreferrer">${escapeHtml(ctx.primaryCollection.title)}</a>
             <a href="${flightsUrlFor()}" target="_blank" rel="noopener noreferrer">Авиабилеты</a>
             <a href="${YT_BASE}/blog/" target="_blank" rel="noopener noreferrer">Блог</a>
             <a href="${YT_BASE}/support/" target="_blank" rel="noopener noreferrer">Поддержка</a>
@@ -468,7 +436,7 @@ export function buildIndexHtml(ctx: LandingTemplateContext): string {
       <main>
         ${heroHtml(ctx)}
         ${whyNowHtml(ctx.content)}
-        ${toursSectionHtml(ctx)}
+        ${collectionsSectionHtml(ctx)}
         ${collectionBlockHtml(ctx)}
         ${howToGetHtml(ctx.content)}
         ${esimBlockHtml(ctx.content)}
@@ -610,9 +578,9 @@ export function buildScriptJs(metrics?: MetricsConfig): string {
         });
       }
 
-      document.querySelectorAll('[data-tour-id]').forEach(function (el) {
+      document.querySelectorAll('[data-collection-id]').forEach(function (el) {
         el.addEventListener('click', function () {
-          trackClick(el.getAttribute('data-tour-id'));
+          trackClick(el.getAttribute('data-collection-id'));
         });
       });
     });

@@ -20,6 +20,24 @@ function insight(overrides: Partial<TravelInsight> = {}): TravelInsight {
   };
 }
 
+import type { MatchedCollections } from '../src/types/catalogPage.js';
+
+function matched(overrides: Partial<MatchedCollections> = {}): MatchedCollections {
+  const primary = {
+    url: 'https://youtravel.me/tours/continent/турция',
+    title: 'Туры в Турцию',
+    pageClass: 'континенты',
+    pageType: 'континенты',
+    purpose: 'Целевая страница каталога',
+    tourCount: 50,
+  };
+  return {
+    primary,
+    related: [primary],
+    ...overrides,
+  };
+}
+
 function post(): MarketingPost {
   return {
     marketingTitle: 'Поехали в Турцию',
@@ -36,7 +54,7 @@ describe('landingContentGenerator › buildFallbackContent', () => {
     const content = buildFallbackContent({
       insight: insight(),
       post: post(),
-      tours: [],
+      matched: matched(),
       systemPrompt: 'sys',
     });
     expect(() => LandingContentSchema.parse(content)).not.toThrow();
@@ -51,7 +69,7 @@ describe('landingContentGenerator › buildFallbackContent', () => {
     const content = buildFallbackContent({
       insight: insight({ shortSummary: longSummary }),
       post: post(),
-      tours: [],
+      matched: matched(),
       systemPrompt: 'sys',
     });
     expect(() => LandingContentSchema.parse(content)).not.toThrow();
@@ -67,7 +85,7 @@ describe('landingContentGenerator › buildFallbackContent', () => {
     const content = buildFallbackContent({
       insight: insight({ country: longCountry, travelAngle: longAngle }),
       post: post(),
-      tours: [],
+      matched: matched(),
       systemPrompt: 'sys',
     });
     expect(() => LandingContentSchema.parse(content)).not.toThrow();
@@ -81,7 +99,7 @@ describe('landingContentGenerator › buildFallbackContent', () => {
     const content = buildFallbackContent({
       insight: insight({ country: '   ', travelAngle: '   ', shortSummary: '   ' }),
       post: post(),
-      tours: [],
+      matched: matched(),
       systemPrompt: 'sys',
     });
     expect(() => LandingContentSchema.parse(content)).not.toThrow();
@@ -95,7 +113,7 @@ describe('landingContentGenerator › normalizeLandingContent', () => {
     return buildFallbackContent({
       insight: insight(),
       post: post(),
-      tours: [],
+      matched: matched(),
       systemPrompt: 'sys',
     });
   }

@@ -11,13 +11,13 @@ import {
 } from '../../types/landingContent.js';
 import type { TravelInsight } from '../../types/insight.js';
 import type { MarketingPost } from '../../types/post.js';
-import type { Tour } from '../../types/tour.js';
+import type { MatchedCollections } from '../../types/catalogPage.js';
 import { logger } from '../../utils/logger.js';
 
 export interface GenerateLandingContentInput {
   insight: TravelInsight;
   post: MarketingPost;
-  tours: Tour[];
+  matched: MatchedCollections;
   systemPrompt: string;
   temperature?: number;
   maxTokens?: number;
@@ -167,12 +167,15 @@ export function buildFallbackContent(input: GenerateLandingContentInput): Landin
       { title: 'Меньше хлопот', body: 'Не нужно самостоятельно собирать перелёты, ночёвки и активности.' },
       { title: 'Атмосфера группы', body: 'Едете в небольшой компании единомышленников, а не в одиночку.' },
     ],
-    collectionTitle: clamp(`Готовая подборка туров в ${country}`, 120),
+    collectionTitle: clamp(
+      input.matched.primary.title || `Готовая подборка туров в ${country}`,
+      120,
+    ),
     collectionDesc:
+      input.matched.primary.purpose ||
       'Откройте полный каталог направления — все актуальные туры с фильтрами по датам, цене и формату.',
-    toursTitle: clamp(`Туры в ${country}`, 120),
-    toursLead:
-      'Каждый тур — авторский маршрут с тревел-экспертом. Выберите формат, который подходит вам.',
+    toursTitle: clamp(`Подборки: ${country}`, 120),
+    toursLead: 'Страницы каталога YouTravel.me с турами по направлению и тематике.',
     howToGetTitle: clamp(`Как добраться до ${country}`, 120),
     howToGetDesc:
       'Проверьте удобные рейсы и стоимость билетов на ваши даты, чтобы заранее оценить полный бюджет поездки.',
@@ -415,13 +418,13 @@ export async function generateLandingContent(
       marketingTitle: input.post.marketingTitle,
       marketingText: input.post.marketingText,
     },
-    tours: input.tours.map((t) => ({
-      id: t.id,
-      title: t.title,
-      url: t.url,
-      ...(t.duration ? { duration: t.duration } : {}),
-      ...(t.price ? { price: t.price } : {}),
-      ...(t.country ? { country: t.country } : {}),
+    primaryCollection: input.matched.primary,
+    relatedCollections: input.matched.related.map((c) => ({
+      url: c.url,
+      title: c.title,
+      purpose: c.purpose,
+      pageType: c.pageType,
+      ...(c.tourCount !== undefined ? { tourCount: c.tourCount } : {}),
     })),
     country: input.insight.country,
     travelAngle: input.insight.travelAngle,

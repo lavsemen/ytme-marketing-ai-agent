@@ -14,7 +14,7 @@ program
 
 program
   .command('generate')
-  .description('Run the full pipeline: news -> insight -> tours -> post -> landing')
+  .description('Run the full pipeline: news -> insight -> collections -> post -> landing')
   .option('-s, --source <id>', 'Run for a specific source id (default: all enabled)')
   .option('--run-id <id>', 'External run id (e.g. GitHub Actions run id)')
   .option(
@@ -76,7 +76,7 @@ program
     for (const r of results) {
       const status = r.status === 'rejected' ? '[rejected]' : '          ';
       process.stdout.write(
-        `${r.createdAt}  ${status} ${r.slug.padEnd(40)} ${(r.country ?? '-').padEnd(10)} tours:${r.toursCount}  ${r.landingUrl ?? '-'}\n`,
+        `${r.createdAt}  ${status} ${r.slug.padEnd(40)} ${(r.country ?? '-').padEnd(10)} collections:${r.collectionsCount ?? r.toursCount}  ${r.landingUrl ?? '-'}\n`,
       );
     }
   });

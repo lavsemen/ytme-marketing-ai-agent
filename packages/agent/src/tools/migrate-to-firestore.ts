@@ -22,6 +22,10 @@ import {
 } from '../config/agentConfig.js';
 import { DEFAULT_PROMPTS } from '../modules/ai/prompts.js';
 import { SourcesFileSchema } from '../config/sources.schema.js';
+import {
+  readDefaultCatalogCsv,
+  saveCatalogPagesDoc,
+} from '../modules/catalog/parseCatalogCsv.js';
 
 const CONFIG_DIR = path.join(AGENT_ROOT, 'src', 'config');
 
@@ -29,6 +33,7 @@ interface MigrationStats {
   configs: number;
   results: number;
   resultsSkipped: number;
+  catalogSeeded: boolean;
 }
 
 async function migrateConfig(
@@ -86,6 +91,19 @@ async function migrateSchedules(): Promise<boolean> {
   return true;
 }
 
+async function migrateCatalogPages(): Promise<boolean> {
+  const ref = getDb().collection('config').doc('catalog-pages');
+  const existing = await ref.get();
+  if (existing.exists && existing.data()?.csvGzipBase64) {
+    logger.info('config/catalog-pages already populated, skipping seed');
+    return false;
+  }
+  const csv = await readDefaultCatalogCsv();
+  await saveCatalogPagesDoc({ csvText: csv, fileName: 'default-catalog-pages.csv' });
+  logger.info('Seeded config/catalog-pages from bundled default CSV');
+  return true;
+}
+
 async function migrateResults(): Promise<{ migrated: number; skipped: number }> {
   if (!(await pathExists(RESULTS_DIR))) {
     logger.info({ dir: RESULTS_DIR }, 'No results directory yet, nothing to migrate');
@@ -112,6 +130,13 @@ async function migrateResults(): Promise<{ migrated: number; skipped: number }> 
     const news = body.news as { title?: string } | undefined;
     const insight = body.insight as { country?: string } | undefined;
     const tours = body.tours as unknown[] | undefined;
+    const collections = body.collections as unknown[] | undefined;
+    const primaryCollection = body.primaryCollection as { url?: string } | undefined;
+    const collectionCount = Array.isArray(collections)
+      ? collections.length
+      : Array.isArray(tours)
+        ? tours.length
+        : 0;
     const landing = body.landing as { url?: string } | undefined;
     const meta = body.meta as { createdAt?: string; runId?: string } | undefined;
     await ref.set({
@@ -121,7 +146,9 @@ async function migrateResults(): Promise<{ migrated: number; skipped: number }> 
       ...(meta?.runId ? { runId: meta.runId } : {}),
       newsTitle: news?.title ?? (body.message as string | undefined) ?? slug,
       country: insight?.country ?? null,
-      toursCount: Array.isArray(tours) ? tours.length : 0,
+      toursCount: collectionCount,
+      collectionsCount: collectionCount,
+      collectionUrl: primaryCollection?.url ?? null,
       landingUrl: landing?.url ?? null,
       ...(status === 'rejected'
         ? {
@@ -138,11 +165,18 @@ async function migrateResults(): Promise<{ migrated: number; skipped: number }> 
 }
 
 async function main(): Promise<void> {
-  const stats: MigrationStats = { configs: 0, results: 0, resultsSkipped: 0 };
+  const stats: MigrationStats = {
+    configs: 0,
+    results: 0,
+    resultsSkipped: 0,
+    catalogSeeded: false,
+  };
   if (await migrateSources()) stats.configs += 1;
   if (await migratePrompts()) stats.configs += 1;
   if (await migrateSettings()) stats.configs += 1;
   if (await migrateSchedules()) stats.configs += 1;
+  stats.catalogSeeded = await migrateCatalogPages();
+  if (stats.catalogSeeded) stats.configs += 1;
 
   const r = await migrateResults();
   stats.results = r.migrated;

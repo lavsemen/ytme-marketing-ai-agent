@@ -97,7 +97,9 @@ export async function persistSuccess(result: PipelineResult): Promise<void> {
     runId: result.meta.runId ?? null,
     newsTitle: result.news.title,
     country: result.insight.country ?? null,
-    toursCount: result.tours.length,
+    toursCount: result.collections.length,
+    collectionsCount: result.collections.length,
+    collectionUrl: result.primaryCollection.url,
     landingUrl: result.landing.url,
     body: result,
   });
@@ -165,6 +167,8 @@ export interface ResultCard {
   status: 'success' | 'rejected';
   country: string | null;
   toursCount: number;
+  collectionsCount?: number;
+  collectionUrl?: string | null;
   landingUrl: string | null;
   newsTitle: string;
 }
@@ -182,7 +186,9 @@ export async function listResults(limit = 50): Promise<ResultCard[]> {
       createdAt: data.createdAt ?? '',
       status: data.status ?? 'success',
       country: data.country ?? null,
-      toursCount: data.toursCount ?? 0,
+      toursCount: data.toursCount ?? data.collectionsCount ?? 0,
+      collectionsCount: data.collectionsCount ?? data.toursCount ?? 0,
+      collectionUrl: data.collectionUrl ?? null,
       landingUrl: data.landingUrl ?? null,
       newsTitle: data.newsTitle ?? '',
     };

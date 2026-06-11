@@ -121,7 +121,7 @@ export function HistoryPage(): ReactNode {
                 <th>Статус</th>
                 <th>Новость</th>
                 <th>Страна</th>
-                <th>Туров</th>
+                <th>Подборок</th>
                 <th></th>
               </tr>
             </thead>
@@ -153,7 +153,9 @@ export function HistoryPage(): ReactNode {
                       <div className="text-xs text-ink-faint">{r.slug}</div>
                     </td>
                     <td>{r.country ?? '—'}</td>
-                    <td className="font-mono text-xs">{isRejected ? '—' : r.toursCount}</td>
+                    <td className="font-mono text-xs">
+                      {isRejected ? '—' : r.collectionsCount}
+                    </td>
                     <td className="text-right">
                       {isRejected ? (
                         <span className="text-xs text-ink-faint">Нет лендинга</span>
