@@ -1,36 +1,22 @@
 import { Readability } from '@mozilla/readability';
 import { JSDOM } from 'jsdom';
 import * as cheerio from 'cheerio';
-import { request } from 'undici';
 import type { NewsItem } from '../../types/news.js';
 import type { Source } from '../../config/sources.schema.js';
-
-const USER_AGENT =
-  'YouTravelMarketingAgent/0.1 (+https://youtravel.me) Mozilla/5.0';
+import {
+  fetchText,
+  isFetchAbortError,
+  NEWS_HTTP,
+} from './httpFetch.js';
 
 interface FetchedHtml {
   html: string;
   finalUrl: string;
 }
 
-async function fetchHtml(url: string): Promise<FetchedHtml> {
-  const res = await request(url, {
-    method: 'GET',
-    headersTimeout: 15000,
-    bodyTimeout: 30000,
-    headers: {
-      'User-Agent': USER_AGENT,
-      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'Accept-Language': 'ru,en;q=0.8',
-    },
-  });
-
-  if (res.statusCode < 200 || res.statusCode >= 400) {
-    throw new Error(`HTTP ${res.statusCode} for ${url}`);
-  }
-
-  const html = await res.body.text();
-  return { html, finalUrl: url };
+async function fetchHtml(url: string, signal?: AbortSignal): Promise<FetchedHtml> {
+  const { text } = await fetchText(url, { signal });
+  return { html: text, finalUrl: url };
 }
 
 function absoluteUrl(base: string, maybeRelative: string | undefined): string | undefined {
@@ -125,20 +111,31 @@ function extractArticle(html: string, url: string): {
   return result;
 }
 
+export interface FetchHtmlNewsOptions {
+  maxArticles?: number;
+  signal?: AbortSignal;
+}
+
 export async function fetchHtmlNews(
   source: Source,
-  options: { maxArticles?: number } = {},
+  options: FetchHtmlNewsOptions = {},
 ): Promise<NewsItem[]> {
   const maxArticles = options.maxArticles ?? 5;
+  const signal = options.signal;
+  const linkBudget = Math.min(
+    maxArticles * 3,
+    NEWS_HTTP.htmlMaxLinkAttempts,
+  );
 
-  const index = await fetchHtml(source.url);
-  const links = extractLinks(index.html, source.url, maxArticles * 3);
+  const index = await fetchHtml(source.url, signal);
+  const links = extractLinks(index.html, source.url, linkBudget);
 
   const results: NewsItem[] = [];
   for (const link of links) {
+    if (signal?.aborted) break;
     if (results.length >= maxArticles) break;
     try {
-      const page = await fetchHtml(link);
+      const page = await fetchHtml(link, signal);
       const extracted = extractArticle(page.html, page.finalUrl);
       if (!extracted.title || !extracted.text || extracted.text.length < 200) {
         continue;
@@ -156,7 +153,8 @@ export async function fetchHtmlNews(
       if (extracted.imageUrl) news.imageUrl = extracted.imageUrl;
       if (extracted.publishedAt) news.publishedAt = extracted.publishedAt;
       results.push(news);
-    } catch {
+    } catch (err) {
+      if (isFetchAbortError(err)) throw err;
       continue;
     }
   }

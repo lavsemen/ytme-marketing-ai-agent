@@ -2,11 +2,9 @@ name: Run scheduled generations
 
 on:
   schedule:
-    # Hourly. Each rule in Firestore config/schedules defines its own cron+tz;
-    # the agent runner picks rules whose previous tick falls in the current
-    # UTC hour window. GitHub schedule jitter is up to ~15 min, so checking
-    # once an hour is enough.
-    - cron: '0 * * * *'
+    # Every 15 min — each Firestore rule has its own cron+tz; the agent picks
+    # rules whose current slot [prevTick, nextTick) is active (dedup via Firestore).
+    - cron: '*/15 * * * *'
   workflow_dispatch:
     inputs:
       force:
@@ -26,7 +24,7 @@ concurrency:
 jobs:
   scheduled:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -68,7 +66,7 @@ jobs:
           echo "GOOGLE_APPLICATION_CREDENTIALS=$CREDS" >> "$GITHUB_ENV"
           echo "Firebase service account JSON validated"
 
-      - name: Run scheduled rules
+      - name: Run pipeline
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || 'claude-sonnet-4-5' }}
@@ -91,6 +89,7 @@ jobs:
             ARGS+=(--force)
           fi
           yarn workspace @ytme/agent run-scheduled "${ARGS[@]}"
+          echo "Scheduled run finished (same pipeline as generate.yml — post + Slack on success)."
 
       - name: Commit & push landings
         run: |

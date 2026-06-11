@@ -59,3 +59,35 @@ describe('pickFreshInsight', () => {
     expect(pickFreshInsight(insights, news, used)).toBeNull();
   });
 });
+
+describe('used infopovod doc filtering', () => {
+  function keysFromDocs(
+    docs: Array<{ data: () => { status?: string; infopovodKey?: string; body?: { news?: { title?: string } } } }>,
+  ): Set<string> {
+    const keys = new Set<string>();
+    let successScanned = 0;
+    for (const doc of docs) {
+      const data = doc.data();
+      if (data.status !== 'success') continue;
+      const key =
+        data.infopovodKey?.trim() ||
+        (data.body?.news?.title ? normalizeInfopovodTitle(data.body.news.title) : null);
+      if (key) keys.add(key);
+      successScanned += 1;
+      if (successScanned >= 500) break;
+    }
+    return keys;
+  }
+
+  it('skips rejected and reads success keys', () => {
+    const docs = [
+      { data: () => ({ status: 'rejected', infopovodKey: 'skip-me' }) },
+      { data: () => ({ status: 'success', infopovodKey: 'used-a' }) },
+      { data: () => ({ status: 'success', body: { news: { title: 'Китай без визы' } } }) },
+    ];
+    const keys = keysFromDocs(docs);
+    expect(keys.has('skip-me')).toBe(false);
+    expect(keys.has('used-a')).toBe(true);
+    expect(keys.has(normalizeInfopovodTitle('Китай без визы'))).toBe(true);
+  });
+});

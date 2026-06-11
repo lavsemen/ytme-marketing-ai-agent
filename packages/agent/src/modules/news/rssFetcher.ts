@@ -1,12 +1,12 @@
 import Parser from 'rss-parser';
 import type { NewsItem } from '../../types/news.js';
 import type { Source } from '../../config/sources.schema.js';
+import { NEWS_HTTP, NEWS_USER_AGENT } from './httpFetch.js';
 
 const parser = new Parser({
-  timeout: 15000,
+  timeout: NEWS_HTTP.headersTimeoutMs,
   headers: {
-    'User-Agent':
-      'YouTravelMarketingAgent/0.1 (+https://youtravel.me) Mozilla/5.0',
+    'User-Agent': NEWS_USER_AGENT,
   },
 });
 
@@ -33,12 +33,24 @@ function pickImage(item: Parser.Item & Record<string, unknown>): string | undefi
   return undefined;
 }
 
-export async function fetchRss(source: Source): Promise<NewsItem[]> {
+export interface FetchRssOptions {
+  signal?: AbortSignal;
+}
+
+export async function fetchRss(
+  source: Source,
+  options: FetchRssOptions = {},
+): Promise<NewsItem[]> {
+  if (options.signal?.aborted) {
+    throw options.signal.reason ?? new Error('RSS fetch aborted');
+  }
+
   const feed = await parser.parseURL(source.url);
   const items = feed.items ?? [];
 
   const results: NewsItem[] = [];
   for (const item of items) {
+    if (options.signal?.aborted) break;
     if (!item.link || !item.title) continue;
 
     const text =

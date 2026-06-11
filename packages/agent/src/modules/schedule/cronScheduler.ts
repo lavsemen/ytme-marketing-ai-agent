@@ -17,6 +17,8 @@ export interface SchedulerDecision {
   rule: ScheduleRule;
   /** prev cron tick that triggered this decision (in UTC) */
   prevTick: Date;
+  /** next cron tick after `now` (in UTC) — end of the current slot window */
+  nextTick?: Date;
   /** absolute reason for not-running, populated only for skipped rules */
   skipReason?: 'disabled' | 'no-tick-in-window' | 'invalid-cron';
   /** parse error message if cron expression failed to compile */
@@ -24,15 +26,13 @@ export interface SchedulerDecision {
 }
 
 /**
- * Start of the current hour in UTC. The scheduler treats a rule as "due"
- * if its previous cron tick (any tz) is >= this moment. That guarantees
- * at most one run per cron tick even when the GitHub Actions hourly trigger
- * fires multiple times within a wide jitter window.
+ * A rule is due while `now` is in `[prevTick, nextTick)` — the half-open interval
+ * between two consecutive cron fires. GitHub Actions may start hours late; dedup
+ * via `lastFiredPrevTick` ensures each slot runs at most once.
  */
-function hourStartUtc(now: Date): Date {
-  const d = new Date(now.getTime());
-  d.setUTCMinutes(0, 0, 0);
-  return d;
+function isInSlotWindow(prev: Date, next: Date, now: Date): boolean {
+  const t = now.getTime();
+  return t >= prev.getTime() && t < next.getTime();
 }
 
 /**
@@ -40,8 +40,7 @@ function hourStartUtc(now: Date): Date {
  *
  *  - disabled rules are skipped
  *  - rules with an invalid cron expression are skipped with reason
- *  - in normal mode: a rule fires if its previous cron tick (in its own tz)
- *    falls inside the current UTC hour window
+ *  - in normal mode: a rule fires if `now` is in [prevTick, nextTick)
  *  - in `force` mode: every enabled rule fires regardless of timing
  *
  * Returns BOTH active and skipped decisions so callers can log skipping reasons.
@@ -51,7 +50,6 @@ export function decideRulesToRun(
   opts: DecideOptions = {},
 ): { active: SchedulerDecision[]; skipped: SchedulerDecision[] } {
   const now = opts.now ?? new Date();
-  const cutoff = hourStartUtc(now);
   const active: SchedulerDecision[] = [];
   const skipped: SchedulerDecision[] = [];
 
@@ -62,12 +60,14 @@ export function decideRulesToRun(
     }
 
     let prev: Date;
+    let next: Date;
     try {
       const interval = CronExpressionParser.parse(rule.cron, {
         currentDate: now,
         tz: rule.tz,
       });
       prev = interval.prev().toDate();
+      next = interval.next().toDate();
     } catch (err) {
       skipped.push({
         rule,
@@ -78,10 +78,10 @@ export function decideRulesToRun(
       continue;
     }
 
-    if (opts.force || prev.getTime() >= cutoff.getTime()) {
-      active.push({ rule, prevTick: prev });
+    if (opts.force || isInSlotWindow(prev, next, now)) {
+      active.push({ rule, prevTick: prev, nextTick: next });
     } else {
-      skipped.push({ rule, prevTick: prev, skipReason: 'no-tick-in-window' });
+      skipped.push({ rule, prevTick: prev, nextTick: next, skipReason: 'no-tick-in-window' });
     }
   }
 

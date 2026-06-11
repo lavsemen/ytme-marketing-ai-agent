@@ -1,5 +1,7 @@
 import { getDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { CronExpressionParser } from 'cron-parser';
 import { getDb } from '../lib/firebase';
+import { stripUndefinedDeep } from '../lib/firestoreSanitize';
 import { refs } from './db';
 
 export const SCHEDULES_MAX_ENABLED = 10;
@@ -12,6 +14,8 @@ export interface ScheduleRuleDto {
   tz: string;
   source: string; // 'all' or sourceId
   hint?: string;
+  /** Set by the scheduled agent run — preserved when editing rules in admin. */
+  lastFiredPrevTick?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -44,6 +48,7 @@ export interface CronPreset {
 export const CRON_PRESETS: CronPreset[] = [
   { label: 'Каждый день 09:00', cron: '0 9 * * *', description: 'Один раз в сутки утром' },
   { label: 'Каждый день 14:00', cron: '0 14 * * *', description: 'В обед' },
+  { label: 'Каждый день 18:20', cron: '20 18 * * *', description: 'Вечером (18:20 МСК)' },
   { label: 'Каждый день 21:00', cron: '0 21 * * *', description: 'Вечером' },
   { label: 'По будням 10:00', cron: '0 10 * * 1-5', description: 'Понедельник–пятница' },
   { label: '2 раза в день (09, 18)', cron: '0 9,18 * * *', description: 'Утром и вечером' },
@@ -51,6 +56,19 @@ export const CRON_PRESETS: CronPreset[] = [
   { label: 'Каждые 6 часов', cron: '0 */6 * * *', description: '00, 06, 12, 18' },
   { label: 'По понедельникам 09:00', cron: '0 9 * * 1', description: 'Раз в неделю' },
 ];
+
+export function validateScheduleCron(cron: string, tz: string): string | null {
+  const trimmed = cron.trim();
+  if (trimmed.length < 9) {
+    return 'Формат: минута час день месяц день_недели (например 20 18 * * * для 18:20)';
+  }
+  try {
+    CronExpressionParser.parse(trimmed, { tz });
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+}
 
 export function normalizeScheduleRule(r: Partial<ScheduleRuleDto>): ScheduleRuleDto {
   const base: ScheduleRuleDto = {
@@ -63,9 +81,12 @@ export function normalizeScheduleRule(r: Partial<ScheduleRuleDto>): ScheduleRule
   };
   const hint = r.hint?.trim();
   if (hint) base.hint = hint;
+  if (typeof r.lastFiredPrevTick === 'string' && r.lastFiredPrevTick) {
+    base.lastFiredPrevTick = r.lastFiredPrevTick;
+  }
   if (r.createdAt) base.createdAt = r.createdAt;
   if (r.updatedAt) base.updatedAt = r.updatedAt;
-  return base;
+  return stripUndefinedDeep(base);
 }
 
 export async function loadSchedules(): Promise<SchedulesFile> {

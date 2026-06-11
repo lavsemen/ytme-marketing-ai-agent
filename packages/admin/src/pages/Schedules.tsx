@@ -13,6 +13,7 @@ import {
   newScheduleId,
   normalizeScheduleRule,
   type ScheduleRuleDto,
+  validateScheduleCron,
 } from '../api/schedules';
 import { loadSources } from '../api/sources';
 import { createGithubClient, dispatchScheduled, formatGithubApiError } from '../api/github';
@@ -92,7 +93,6 @@ export function SchedulesPage(): ReactNode {
             ? normalizeScheduleRule({
                 ...r,
                 ...draft,
-                hint: draft.hint?.trim() || undefined,
                 updatedAt: now,
               })
             : r,
@@ -101,7 +101,6 @@ export function SchedulesPage(): ReactNode {
         const newRule: ScheduleRuleDto = normalizeScheduleRule({
           id: newScheduleId(),
           ...draft,
-          hint: draft.hint?.trim() || undefined,
           createdAt: now,
           updatedAt: now,
         });
@@ -158,7 +157,11 @@ export function SchedulesPage(): ReactNode {
       }
       return rules.map((x) =>
         x.id === r.id
-          ? { ...x, enabled: !existing.enabled, updatedAt: new Date().toISOString() }
+          ? normalizeScheduleRule({
+              ...x,
+              enabled: !existing.enabled,
+              updatedAt: new Date().toISOString(),
+            })
           : x,
       );
     });
@@ -179,8 +182,11 @@ export function SchedulesPage(): ReactNode {
             <span className="text-lime">Расписания</span> запусков
           </h2>
           <p className="mt-1 text-sm text-ink-muted">
-            Активные правила автоматически запускаются раз в час workflow{' '}
-            <code className="font-mono text-ink-secondary">scheduled.yml</code>. Лимит активных правил:{' '}
+            Активные правила запускаются workflow{' '}
+            <code className="font-mono text-ink-secondary">scheduled.yml</code> каждые 15 минут.
+            Время в правиле — в выбранной TZ (по умолчанию MSK). GitHub может опоздать на часы —
+            слот остаётся активным до следующего cron-тика; повтор того же слота блокирует дедуп.
+            Лимит активных правил:{' '}
             <span className={enabledCount >= SCHEDULES_MAX_ENABLED ? 'font-bold text-warning' : 'text-ink-primary'}>
               {enabledCount} / {SCHEDULES_MAX_ENABLED}
             </span>
@@ -223,9 +229,10 @@ export function SchedulesPage(): ReactNode {
       <div className="ds-notice ds-notice-info">
         <Clock size={16} className="mt-0.5 shrink-0" />
         <div className="text-sm">
-          GitHub запускает workflow по cron с задержкой до ~15 минут — это нормально. Каждый cron-тик
-          сработает <strong className="text-ink-primary">ровно один раз</strong> в текущий час.
-          Минимальный практический шаг: раз в час.
+          GitHub запускает workflow с задержкой — это нормально. После успешной
+          генерации тот же cron-слот не повторится (дедуп). Pipeline идентичен ручному запуску:
+          пост, лендинг и уведомление в Slack. Если слот пропущен, он догонится при
+          следующем запуске workflow до следующего cron-тика.
         </div>
       </div>
 
@@ -267,8 +274,10 @@ export function SchedulesPage(): ReactNode {
                 </td>
               </tr>
             )}
-            {rules.map((r) => (
-              <tr key={r.id}>
+            {rules.map((r) => {
+              const cronIssue = validateScheduleCron(r.cron, r.tz);
+              return (
+              <tr key={r.id} className={cronIssue ? 'bg-danger/5' : undefined}>
                 <td>
                   <button
                     type="button"
@@ -289,6 +298,11 @@ export function SchedulesPage(): ReactNode {
                 </td>
                 <td>
                   <code className="font-mono text-xs text-ink-secondary">{r.cron}</code>
+                  {cronIssue && (
+                    <div className="mt-1 text-xs text-danger" title={cronIssue}>
+                      Невалидный cron — исправьте или удалите
+                    </div>
+                  )}
                 </td>
                 <td>
                   <span className="font-mono text-xs text-ink-secondary">{r.tz}</span>
@@ -324,7 +338,8 @@ export function SchedulesPage(): ReactNode {
                   </button>
                 </td>
               </tr>
-            ))}
+            );
+            })}
           </tbody>
         </table>
       </div>
@@ -389,7 +404,10 @@ function ScheduleFormDialog({ initial, sources, onClose, onSave, submitting }: D
   );
   const [error, setError] = useState<string | null>(null);
 
-  const cronError = useMemo(() => validateCronExpr(draft.cron, draft.tz), [draft.cron, draft.tz]);
+  const cronError = useMemo(
+    () => validateScheduleCron(draft.cron, draft.tz),
+    [draft.cron, draft.tz],
+  );
   const previewUtc = useMemo(
     () => previewRuns(draft.cron, 'UTC', 3),
     [draft.cron],
@@ -453,7 +471,7 @@ function ScheduleFormDialog({ initial, sources, onClose, onSave, submitting }: D
               type="text"
               value={draft.cron}
               onChange={(e) => setDraft({ ...draft, cron: e.target.value })}
-              placeholder="0 9 * * *"
+              placeholder="20 18 * * *"
               className="ds-input font-mono"
               required
             />
@@ -576,12 +594,7 @@ function ScheduleFormDialog({ initial, sources, onClose, onSave, submitting }: D
 }
 
 function validateCronExpr(cron: string, tz: string): string | null {
-  try {
-    CronExpressionParser.parse(cron, { tz });
-    return null;
-  } catch (err) {
-    return err instanceof Error ? err.message : String(err);
-  }
+  return validateScheduleCron(cron, tz);
 }
 
 function previewRuns(cron: string, tz: string, n: number): Date[] {
