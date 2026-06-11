@@ -7,8 +7,10 @@
   "scripts": {
     "generate": "tsx src/cli.ts generate",
     "list": "tsx src/cli.ts list",
+    "run-scheduled": "tsx src/cli.ts run-scheduled",
     "validate-sources": "tsx src/cli.ts validate-sources",
     "migrate-firestore": "tsx src/tools/migrate-to-firestore.ts",
+    "cleanup-scheduled": "tsx src/cli.ts cleanup-scheduled",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

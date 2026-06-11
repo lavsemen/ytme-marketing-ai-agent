@@ -52,12 +52,20 @@ export const CRON_PRESETS: CronPreset[] = [
   { label: 'По понедельникам 09:00', cron: '0 9 * * 1', description: 'Раз в неделю' },
 ];
 
-function normalizeRule(r: Partial<ScheduleRuleDto>): ScheduleRuleDto {
-  return {
-    ...r,
-    tz: r.tz ?? DEFAULT_TZ,
+export function normalizeScheduleRule(r: Partial<ScheduleRuleDto>): ScheduleRuleDto {
+  const base: ScheduleRuleDto = {
+    id: r.id ?? '',
     enabled: Boolean(r.enabled),
-  } as ScheduleRuleDto;
+    name: r.name ?? '',
+    cron: r.cron ?? '0 9 * * *',
+    tz: r.tz ?? DEFAULT_TZ,
+    source: r.source ?? 'all',
+  };
+  const hint = r.hint?.trim();
+  if (hint) base.hint = hint;
+  if (r.createdAt) base.createdAt = r.createdAt;
+  if (r.updatedAt) base.updatedAt = r.updatedAt;
+  return base;
 }
 
 export async function loadSchedules(): Promise<SchedulesFile> {
@@ -65,7 +73,7 @@ export async function loadSchedules(): Promise<SchedulesFile> {
   if (!snap.exists()) return { schedules: { rules: [] } };
   const data = snap.data() as Partial<SchedulesDto>;
   const rules = Array.isArray(data.rules) ? data.rules : [];
-  return { schedules: { rules: rules.map(normalizeRule) } };
+  return { schedules: { rules: rules.map(normalizeScheduleRule) } };
 }
 
 /**
@@ -82,14 +90,14 @@ export async function applyScheduleChange(
     const current: SchedulesDto = snap.exists()
       ? {
           rules: Array.isArray(snap.data()?.rules)
-            ? (snap.data()!.rules as ScheduleRuleDto[]).map(normalizeRule)
+            ? (snap.data()!.rules as ScheduleRuleDto[]).map(normalizeScheduleRule)
             : [],
         }
       : { rules: [] };
     const next = mutator(current);
-    computed = next;
+    computed = { rules: next.rules.map(normalizeScheduleRule) };
     t.set(ref, {
-      ...next,
+      rules: computed.rules,
       updatedAt: serverTimestamp() as unknown as string,
     });
   });
@@ -99,6 +107,10 @@ export async function applyScheduleChange(
 /**
  * Browser-side uuid (no crypto.subtle needed). Good enough for stable ids.
  */
+export async function clearAllScheduleRules(): Promise<void> {
+  await applyScheduleChange(() => ({ rules: [] }));
+}
+
 export function newScheduleId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();

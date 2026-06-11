@@ -11,6 +11,7 @@ import type { ScheduleRuleDto } from './schedules';
 import type { PromptsDto } from './prompts';
 import type { AgentSettingsDto } from './settings';
 import type { ResultJson } from './results';
+import { stripUndefinedDeep } from '../lib/firestoreSanitize';
 
 /**
  * Typed Firestore handles for the collections used by the admin SPA.
@@ -100,7 +101,7 @@ export interface ResultDoc {
 function passthroughConverter<T>(): FirestoreDataConverter<T> {
   return {
     toFirestore(value: T): Record<string, unknown> {
-      return value as unknown as Record<string, unknown>;
+      return stripUndefinedDeep(value) as unknown as Record<string, unknown>;
     },
     fromFirestore(snapshot) {
       return snapshot.data() as T;

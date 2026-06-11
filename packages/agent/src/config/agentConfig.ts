@@ -229,10 +229,27 @@ export async function loadSchedules(): Promise<SchedulesConfig> {
 }
 
 export async function saveSchedules(s: SchedulesConfig): Promise<void> {
+  const rules = s.rules.map((r) => normalizeScheduleRuleForWrite(r));
   await getDb()
     .collection('config')
     .doc('schedules')
-    .set({ ...s, updatedAt: new Date().toISOString() }, { merge: true });
+    .set({ rules, updatedAt: new Date().toISOString() }, { merge: true });
+}
+
+function normalizeScheduleRuleForWrite(r: ScheduleRule): ScheduleRule {
+  const base: ScheduleRule = {
+    id: r.id,
+    enabled: r.enabled,
+    name: r.name,
+    cron: r.cron,
+    tz: r.tz,
+    source: r.source,
+  };
+  const hint = r.hint?.trim();
+  if (hint) base.hint = hint;
+  if (r.createdAt) base.createdAt = r.createdAt;
+  if (r.updatedAt) base.updatedAt = r.updatedAt;
+  return base;
 }
 
 /** Replaces {{path.to.key}} placeholders with values; arrays joined by ", "; missing → "". */

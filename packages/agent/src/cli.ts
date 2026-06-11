@@ -198,7 +198,27 @@ program
   });
 
 program
-  .command('validate-sources')
+  .command('cleanup-scheduled')
+  .description(
+    'Remove all schedule rules and delete runs/results created by scheduled triggers',
+  )
+  .option('--dry-run', 'Only count documents that would be deleted', false)
+  .option('--keep-rules', 'Delete runs/results but keep schedule rules', false)
+  .action(async (opts) => {
+    try {
+      const { cleanupScheduled } = await import('./tools/cleanup-scheduled.js');
+      const stats = await cleanupScheduled({
+        dryRun: Boolean(opts.dryRun),
+        clearRules: !opts.keepRules,
+      });
+      process.stdout.write(JSON.stringify({ ok: true, ...stats }) + '\n');
+    } catch (err) {
+      logger.error({ err }, 'cleanup-scheduled failed');
+      process.exit(1);
+    }
+  });
+
+program
   .description('Validate sources.json against the schema')
   .action(async () => {
     try {

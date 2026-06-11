@@ -8,8 +8,10 @@ import {
   SCHEDULES_MAX_ENABLED,
   TZ_OPTIONS,
   applyScheduleChange,
+  clearAllScheduleRules,
   loadSchedules,
   newScheduleId,
+  normalizeScheduleRule,
   type ScheduleRuleDto,
 } from '../api/schedules';
 import { loadSources } from '../api/sources';
@@ -49,6 +51,11 @@ export function SchedulesPage(): ReactNode {
     onError: () => qc.invalidateQueries({ queryKey: ['schedules'] }),
   });
 
+  const clearAllMutation = useMutation({
+    mutationFn: () => clearAllScheduleRules(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['schedules'] }),
+  });
+
   const dispatchMutation = useMutation({
     mutationFn: async () => {
       if (!client) throw new Error('PAT нужен для запуска workflow (Settings → PAT).');
@@ -62,7 +69,7 @@ export function SchedulesPage(): ReactNode {
   const rules = query.data?.schedules.rules ?? [];
   const sources = sourcesQuery.data?.sources ?? [];
   const enabledCount = rules.filter((r) => r.enabled).length;
-  const busy = saveMutation.isPending;
+  const busy = saveMutation.isPending || clearAllMutation.isPending;
 
   function openCreate(): void {
     if (busy) return;
@@ -82,22 +89,22 @@ export function SchedulesPage(): ReactNode {
       if (editingId) {
         next = rules.map((r) =>
           r.id === editingId
-            ? {
+            ? normalizeScheduleRule({
                 ...r,
                 ...draft,
                 hint: draft.hint?.trim() || undefined,
                 updatedAt: now,
-              }
+              })
             : r,
         );
       } else {
-        const newRule: ScheduleRuleDto = {
+        const newRule: ScheduleRuleDto = normalizeScheduleRule({
           id: newScheduleId(),
           ...draft,
           hint: draft.hint?.trim() || undefined,
           createdAt: now,
           updatedAt: now,
-        };
+        });
         next = [...rules, newRule];
       }
       const wouldEnabled = next.filter((r) => r.enabled).length;
@@ -110,6 +117,18 @@ export function SchedulesPage(): ReactNode {
     });
     setShowForm(false);
     setEditing(null);
+  }
+
+  async function handleClearAllRules(): Promise<void> {
+    if (rules.length === 0) return;
+    if (
+      !confirm(
+        'Удалить все правила расписания? Автоматические запуски прекратятся. Историю генераций по расписанию удалите командой:\nyarn workspace @ytme/agent cleanup-scheduled',
+      )
+    ) {
+      return;
+    }
+    await clearAllMutation.mutateAsync();
   }
 
   async function handleDelete(r: ScheduleRuleDto): Promise<void> {
@@ -169,6 +188,18 @@ export function SchedulesPage(): ReactNode {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {rules.length > 0 && (
+            <button
+              type="button"
+              onClick={() => void handleClearAllRules()}
+              disabled={busy}
+              className="btn-outline text-danger border-danger/40 hover:bg-danger/10"
+              title="Очистить config/schedules. Для удаления истории запусков используйте CLI cleanup-scheduled."
+            >
+              <Trash2 size={14} />
+              {clearAllMutation.isPending ? 'Удаляем…' : 'Удалить все правила'}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => dispatchMutation.mutate()}
@@ -197,6 +228,12 @@ export function SchedulesPage(): ReactNode {
           Минимальный практический шаг: раз в час.
         </div>
       </div>
+
+      {clearAllMutation.isError && (
+        <div className="ds-notice ds-notice-danger">
+          Не удалось очистить правила: {errorMessage(clearAllMutation.error)}
+        </div>
+      )}
 
       {dispatchMutation.isError && (
         <div className="ds-notice ds-notice-danger">
