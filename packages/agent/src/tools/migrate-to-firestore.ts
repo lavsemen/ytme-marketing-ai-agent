@@ -26,6 +26,7 @@ import {
   readDefaultCatalogCsv,
   saveCatalogPagesDoc,
 } from '../modules/catalog/parseCatalogCsv.js';
+import { normalizeInfopovodTitle } from '../modules/infopovod/infopovodKey.js';
 
 const CONFIG_DIR = path.join(AGENT_ROOT, 'src', 'config');
 
@@ -150,6 +151,9 @@ async function migrateResults(): Promise<{ migrated: number; skipped: number }> 
       collectionsCount: collectionCount,
       collectionUrl: primaryCollection?.url ?? null,
       landingUrl: landing?.url ?? null,
+      ...(status === 'success' && news?.title
+        ? { infopovodKey: normalizeInfopovodTitle(news.title) }
+        : {}),
       ...(status === 'rejected'
         ? {
             rejectionReason: (body.reason as string | undefined) ?? null,

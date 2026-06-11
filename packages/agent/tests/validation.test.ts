@@ -156,6 +156,16 @@ describe('zod schemas', () => {
       });
       expect(parsed.success).toBe(false);
     });
+
+    it('accepts no_fresh_infopovod rejection', () => {
+      const parsed = RejectedPipelineResultSchema.safeParse({
+        status: 'rejected',
+        reason: 'no_fresh_infopovod',
+        message: 'All candidates used',
+        meta: { createdAt: new Date().toISOString(), agentVersion: '0.1.0' },
+      });
+      expect(parsed.success).toBe(true);
+    });
   });
 
   describe('ResultMetaSchema', () => {

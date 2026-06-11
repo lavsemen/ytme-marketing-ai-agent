@@ -18,6 +18,7 @@ export type RejectionReason =
   | 'unknown_country'
   | 'blocked_country'
   | 'no_collections'
+  | 'no_fresh_infopovod'
   | 'llm_error';
 
 export interface ResultMeta {
@@ -116,6 +117,7 @@ export const REJECTION_REASON_LABELS: Record<RejectionReason, string> = {
   unknown_country: 'Не определена страна',
   blocked_country: 'Страна в чёрном списке',
   no_collections: 'Нет подборок',
+  no_fresh_infopovod: 'Нет новых инфоповодов',
   llm_error: 'Ошибка LLM',
 };
 

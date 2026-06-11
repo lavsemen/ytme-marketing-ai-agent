@@ -25,6 +25,7 @@ const PipelineSettingsSchema = z.object({
   tourSearchLimit: z.number().int().min(1).max(200),
   newsMaxAgeDays: z.number().int().min(1).max(365),
   newsMaxPerSource: z.number().int().min(1).max(50),
+  dedupeInfopovods: z.boolean().default(true),
 });
 
 const LlmTemperaturesSchema = z.object({
@@ -100,6 +101,7 @@ export const DEFAULT_SETTINGS: AgentSettings = {
     tourSearchLimit: 40,
     newsMaxAgeDays: 21,
     newsMaxPerSource: 5,
+    dedupeInfopovods: true,
   },
   llm: {
     temperature: { analyzer: 0.3, post: 0.6, landing: 0.5, factcheck: 0 },

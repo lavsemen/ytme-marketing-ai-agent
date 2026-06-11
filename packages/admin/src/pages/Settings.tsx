@@ -369,6 +369,20 @@ function PipelineTab({
           onChange={(v) => onChange({ ...value, newsMaxPerSource: v })}
         />
       </Field>
+      <Field
+        label="Не повторять инфоповоды"
+        hint="Успешные генерации с тем же нормализованным заголовком новости не будут выбраны снова."
+      >
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-ink-secondary">
+          <input
+            type="checkbox"
+            checked={value.dedupeInfopovods}
+            onChange={(e) => onChange({ ...value, dedupeInfopovods: e.target.checked })}
+            className="h-4 w-4 rounded border-line accent-lime"
+          />
+          Дедупликация по заголовку новости (включено)
+        </label>
+      </Field>
     </div>
   );
 }

@@ -98,6 +98,7 @@ export interface ResultDoc {
   toursCount?: number;
   collectionsCount?: number;
   collectionUrl?: string | null;
+  infopovodKey?: string | null;
   landingUrl?: string | null;
   rejectionReason?: string | null;
   rejectionMessage?: string | null;

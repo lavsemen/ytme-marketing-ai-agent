@@ -40,6 +40,7 @@ export interface AgentSettingsDto {
     tourSearchLimit: number;
     newsMaxAgeDays: number;
     newsMaxPerSource: number;
+    dedupeInfopovods: boolean;
   };
   llm: {
     model?: string;
@@ -78,6 +79,7 @@ export const DEFAULT_SETTINGS: AgentSettingsDto = {
     tourSearchLimit: 40,
     newsMaxAgeDays: 21,
     newsMaxPerSource: 5,
+    dedupeInfopovods: true,
   },
   llm: {
     temperature: { analyzer: 0.3, post: 0.6, landing: 0.5, factcheck: 0 },

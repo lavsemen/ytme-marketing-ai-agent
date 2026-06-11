@@ -4,6 +4,7 @@ import type {
   PipelineResult,
   RejectedPipelineResult,
 } from '../../types/result.js';
+import { normalizeInfopovodTitle } from '../infopovod/infopovodKey.js';
 
 /**
  * Pipeline persistence layer — writes results and run lifecycle to Firestore.
@@ -101,6 +102,7 @@ export async function persistSuccess(result: PipelineResult): Promise<void> {
     collectionsCount: result.collections.length,
     collectionUrl: result.primaryCollection.url,
     landingUrl: result.landing.url,
+    infopovodKey: normalizeInfopovodTitle(result.news.title),
     body: result,
   });
   if (result.meta.runId) {

@@ -8,7 +8,7 @@ import {
 import { fetchAllNews } from './modules/news/newsFetcher.js';
 import type { LlmClient } from './modules/ai/llmClient.js';
 import { AnthropicClient } from './modules/ai/anthropicClient.js';
-import { analyzeNews, pickTopInsight } from './modules/ai/newsAnalyzer.js';
+import { analyzeNews } from './modules/ai/newsAnalyzer.js';
 import { generatePost, factCheckPost } from './modules/ai/postGenerator.js';
 import { generateLandingContent } from './modules/ai/landingContentGenerator.js';
 import { loadCatalogPages } from './modules/catalog/parseCatalogCsv.js';
@@ -39,6 +39,12 @@ import {
   startRun,
 } from './modules/deploy/persist.js';
 import { tryNotifySlackRejected, tryNotifySlackSuccess } from './modules/notify/slack.js';
+import { infopovodKeyForInsight } from './modules/infopovod/infopovodKey.js';
+import {
+  countUsedInsights,
+  loadUsedInfopovodKeys,
+  pickFreshInsight,
+} from './modules/infopovod/usedInfopovods.js';
 
 const AGENT_VERSION = '0.1.0';
 
@@ -89,6 +95,7 @@ const REJECTION_LABELS: Record<RejectionReason, string> = {
   unknown_country: 'LLM не смог определить страну / направление',
   blocked_country: 'Страна в чёрном списке настроек',
   no_collections: 'Не найдена подходящая подборка в каталоге',
+  no_fresh_infopovod: 'Все инфоповоды уже использованы',
   llm_error: 'Ошибка анализа новостей LLM',
 };
 
@@ -286,10 +293,35 @@ async function runPipelineInner(
     bucket: currentMonthBucket(),
   });
 
-  const topInsight = pickTopInsight(insights);
+  const usedKeys =
+    settings.pipeline.dedupeInfopovods !== false
+      ? await loadUsedInfopovodKeys()
+      : new Set<string>();
+
+  const topInsight = pickFreshInsight(insights, news, usedKeys);
+  if (!topInsight) {
+    const skippedUsed = countUsedInsights(insights, news, usedKeys);
+    return persistRejection(
+      buildRejection({
+        reason: 'no_fresh_infopovod',
+        details: `Все ${insights.length} кандидат(ов) уже использованы в успешных генерациях (${skippedUsed} совпадений по заголовку). Дождитесь новых новостей или отключите дедупликацию в настройках.`,
+        ...baseRej(),
+        news,
+        insights,
+      }),
+    );
+  }
+
+  const pickedKey = infopovodKeyForInsight(topInsight, news);
   logger.info(
-    { country: topInsight.country, confidence: topInsight.confidenceScore },
-    'Top insight selected (after geo/season boost)',
+    {
+      country: topInsight.country,
+      confidence: topInsight.confidenceScore,
+      pickedKey,
+      skippedUsed: countUsedInsights(insights, news, usedKeys),
+      dedupeEnabled: settings.pipeline.dedupeInfopovods !== false,
+    },
+    'Top insight selected (after geo/season boost and dedupe)',
   );
 
   if (topInsight.confidenceScore < settings.pipeline.confidenceThreshold) {

@@ -51,6 +51,7 @@ export const REJECTION_REASONS = [
   'unknown_country',
   'blocked_country',
   'no_collections',
+  'no_fresh_infopovod',
   'llm_error',
 ] as const;
 export type RejectionReason = (typeof REJECTION_REASONS)[number];
