@@ -34,11 +34,11 @@ export const PROMPT_LABELS: Record<PromptKey, string> = {
 };
 
 export const PROMPT_HINTS: Record<PromptKey, string> = {
-  systemGuardrails: 'Общие правила тона и фактчека. Этот текст НЕ приклеивается отдельно — мы используем его только как маркер дефолта (промпты сами по себе содержат guardrails).',
-  newsAnalyzer: 'Промпт первого LLM-вызова: на вход — массив новостей, на выход — массив TravelInsight.',
-  postGenerator: 'Промпт второго LLM-вызова: на вход insight + tours, на выход MarketingPost.',
-  landingContent: 'Промпт третьего LLM-вызова: на вход — insight + post + tours, на выход — блочный контент лендинга.',
-  factCheck: 'Промпт фактчек-вызова: проверяет, не выдумал ли пост фактов.',
+  systemGuardrails: 'Общие ограничения (факты, язык). Формат JSON задаётся кодом автоматически.',
+  newsAnalyzer: 'Критерии отбора travel-инфоповодов. Формат ответа (массив TravelInsight) — фиксирован в коде.',
+  postGenerator: 'Тон и содержание поста. Структура MarketingPost — фиксирована в коде.',
+  landingContent: 'Акценты блоков лендинга. Схема LandingContent — фиксирована в коде.',
+  factCheck: 'Что считать нарушением. Ответ всегда { violations: string[] }.',
 };
 
 export interface PromptsFile {

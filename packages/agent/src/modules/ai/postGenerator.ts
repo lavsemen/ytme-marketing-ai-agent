@@ -54,6 +54,8 @@ export async function generatePost(
     throw new Error(`PostGenerator: invalid JSON from LLM: ${(err as Error).message}`);
   }
 
+  parsed = coerceMarketingPost(parsed);
+
   const result = MarketingPostSchema.safeParse(parsed);
   if (!result.success) {
     logger.error({ issues: result.error.issues, parsed }, 'Post validation failed');
@@ -66,6 +68,27 @@ export async function generatePost(
 const FactCheckResultSchema = z.object({
   violations: z.array(z.string()),
 });
+
+function coerceMarketingPost(parsed: unknown): unknown {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return parsed;
+  const obj = parsed as Record<string, unknown>;
+  for (const key of ['post', 'marketingPost', 'marketing_post', 'result', 'data'] as const) {
+    const val = obj[key];
+    if (val && typeof val === 'object' && !Array.isArray(val)) return val;
+  }
+  return parsed;
+}
+
+function coerceFactCheckResult(parsed: unknown): unknown {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return parsed;
+  const obj = parsed as Record<string, unknown>;
+  if (Array.isArray(obj.violations)) return parsed;
+  for (const key of ['result', 'data', 'factCheck', 'fact_check'] as const) {
+    const val = obj[key];
+    if (val && typeof val === 'object' && !Array.isArray(val)) return val;
+  }
+  return parsed;
+}
 
 export interface FactCheckResult {
   violations: string[];
@@ -107,6 +130,8 @@ export async function factCheckPost(
     logger.warn({ raw, err }, 'FactCheck: invalid JSON, treating as no-violations');
     return { violations: [] };
   }
+
+  parsed = coerceFactCheckResult(parsed);
 
   const result = FactCheckResultSchema.safeParse(parsed);
   if (!result.success) {

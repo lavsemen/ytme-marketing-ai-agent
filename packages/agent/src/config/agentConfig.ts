@@ -1,5 +1,12 @@
 import { z } from 'zod';
 import { getDb } from '../db/firestore.js';
+import {
+  composeLlmSystemPrompt,
+  FACT_CHECK_OUTPUT_CONTRACT,
+  LANDING_CONTENT_OUTPUT_CONTRACT,
+  NEWS_ANALYZER_OUTPUT_CONTRACT,
+  POST_GENERATOR_OUTPUT_CONTRACT,
+} from '../modules/ai/outputContracts.js';
 
 const PromptsSchema = z.object({
   systemGuardrails: z.string().min(1),
@@ -340,17 +347,20 @@ export interface EffectivePrompts {
   factCheck: string;
 }
 
-/** Builds the final per-call system prompts: base text + brand/geo/season/hint context. */
+/** Builds the final per-call system prompts: immutable output contract + editable task + context. */
 export function buildEffectivePrompts(
   prompts: PromptsConfig,
   ctx: PromptContext,
 ): EffectivePrompts {
   const context = buildContextBlock(ctx);
-  const append = (basePrompt: string): string => `${basePrompt}\n\n${context}`;
+  const guardrails = prompts.systemGuardrails;
+  const withContract = (contract: string, instructions: string): string =>
+    composeLlmSystemPrompt(contract, instructions, { guardrails, contextBlock: context });
+
   return {
-    newsAnalyzer: append(prompts.newsAnalyzer),
-    postGenerator: append(prompts.postGenerator),
-    landingContent: append(prompts.landingContent),
-    factCheck: append(prompts.factCheck),
+    newsAnalyzer: withContract(NEWS_ANALYZER_OUTPUT_CONTRACT, prompts.newsAnalyzer),
+    postGenerator: withContract(POST_GENERATOR_OUTPUT_CONTRACT, prompts.postGenerator),
+    landingContent: withContract(LANDING_CONTENT_OUTPUT_CONTRACT, prompts.landingContent),
+    factCheck: withContract(FACT_CHECK_OUTPUT_CONTRACT, prompts.factCheck),
   };
 }

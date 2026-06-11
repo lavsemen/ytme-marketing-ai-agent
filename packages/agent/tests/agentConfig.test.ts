@@ -137,14 +137,15 @@ describe('agentConfig', () => {
   });
 
   describe('buildEffectivePrompts', () => {
-    it('appends context to every prompt', () => {
+    it('prepends immutable output contract and appends context', () => {
       const eff = buildEffectivePrompts(DEFAULT_PROMPTS, {
         settings: DEFAULT_SETTINGS,
         hint: 'test-hint',
       });
       for (const key of ['newsAnalyzer', 'postGenerator', 'landingContent', 'factCheck'] as const) {
         expect(eff[key]).toContain('test-hint');
-        expect(eff[key].startsWith(DEFAULT_PROMPTS[key])).toBe(true);
+        expect(eff[key]).toContain('ФОРМАТ ОТВЕТА');
+        expect(eff[key]).toContain(DEFAULT_PROMPTS[key]);
       }
     });
   });

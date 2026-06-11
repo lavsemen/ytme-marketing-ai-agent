@@ -395,6 +395,16 @@ export function normalizeLandingContent(
   return result.success ? result.data : null;
 }
 
+function unwrapLandingContent(parsed: unknown): unknown {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return parsed;
+  const obj = parsed as Record<string, unknown>;
+  for (const key of ['landingContent', 'landing', 'content', 'data', 'result'] as const) {
+    const val = obj[key];
+    if (val && typeof val === 'object' && !Array.isArray(val)) return val;
+  }
+  return parsed;
+}
+
 export async function generateLandingContent(
   llm: LlmClient,
   input: GenerateLandingContentInput,
@@ -440,6 +450,8 @@ export async function generateLandingContent(
     logger.warn({ err, raw: raw.slice(0, 400) }, 'Landing content JSON parse failed — using fallback');
     return buildFallbackContent(input);
   }
+
+  parsed = unwrapLandingContent(parsed);
 
   const direct = LandingContentSchema.safeParse(parsed);
   if (direct.success) {
