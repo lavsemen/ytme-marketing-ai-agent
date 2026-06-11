@@ -1,5 +1,6 @@
 import { getDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { getDb } from '../lib/firebase';
+import { stripUndefinedDeep } from '../lib/firestoreSanitize';
 import { refs } from './db';
 
 export const SCHEDULES_MAX_ENABLED = 10;
@@ -12,6 +13,8 @@ export interface ScheduleRuleDto {
   tz: string;
   source: string; // 'all' or sourceId
   hint?: string;
+  /** Set by the scheduled agent run — preserved when editing rules in admin. */
+  lastFiredPrevTick?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -63,9 +66,12 @@ export function normalizeScheduleRule(r: Partial<ScheduleRuleDto>): ScheduleRule
   };
   const hint = r.hint?.trim();
   if (hint) base.hint = hint;
+  if (typeof r.lastFiredPrevTick === 'string' && r.lastFiredPrevTick) {
+    base.lastFiredPrevTick = r.lastFiredPrevTick;
+  }
   if (r.createdAt) base.createdAt = r.createdAt;
   if (r.updatedAt) base.updatedAt = r.updatedAt;
-  return base;
+  return stripUndefinedDeep(base);
 }
 
 export async function loadSchedules(): Promise<SchedulesFile> {

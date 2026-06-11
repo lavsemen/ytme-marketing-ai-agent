@@ -25,14 +25,31 @@ describe('cronScheduler › decideRulesToRun', () => {
     expect(skipped).toHaveLength(0);
   });
 
-  it('skips rule whose previous tick happened in the previous UTC hour', () => {
-    // now = 2026-05-22T10:15:00Z. Daily rule "0 9 * * *" tz=UTC — prev = 09:00Z (previous hour)
+  it('fires daily rule within 90 minutes after the tick (GH delay tolerance)', () => {
+    // now = 10:15 UTC, daily 09:00 UTC — prev = 09:00Z, elapsed 75m
     const now = new Date('2026-05-22T10:15:00Z');
+    const r = rule({ cron: '0 9 * * *', tz: 'UTC' });
+    const { active, skipped } = decideRulesToRun([r], { now });
+    expect(active).toHaveLength(1);
+    expect(skipped).toHaveLength(0);
+  });
+
+  it('skips daily rule when previous tick is older than grace window', () => {
+    // now = 11:00 UTC, daily 09:00 UTC — elapsed 2h
+    const now = new Date('2026-05-22T11:00:00Z');
     const r = rule({ cron: '0 9 * * *', tz: 'UTC' });
     const { active, skipped } = decideRulesToRun([r], { now });
     expect(active).toHaveLength(0);
     expect(skipped).toHaveLength(1);
     expect(skipped[0]!.skipReason).toBe('no-tick-in-window');
+  });
+
+  it('fires 18:00 MSK when GitHub job starts in the next UTC hour', () => {
+    // 18:00 Europe/Moscow = 15:00 UTC; job starts 16:05 UTC (common GH delay)
+    const now = new Date('2026-05-22T16:05:00Z');
+    const r = rule({ cron: '0 18 * * *', tz: 'Europe/Moscow' });
+    const { active } = decideRulesToRun([r], { now });
+    expect(active).toHaveLength(1);
   });
 
   it('respects TZ when computing prev tick', () => {

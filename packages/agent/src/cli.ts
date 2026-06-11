@@ -1,10 +1,11 @@
 import { Command } from 'commander';
 import { logger } from './utils/logger.js';
-import { runPipeline, loadSources } from './pipeline.js';
+import { loadSources } from './pipeline.js';
 import { listResults } from './modules/deploy/persist.js';
 import { isRejected } from './types/result.js';
-import { loadSchedules } from './config/agentConfig.js';
+import { loadSchedules, markScheduleRuleFired, clearScheduleRuleFiredIfMatches } from './config/agentConfig.js';
 import { decideRulesToRun } from './modules/schedule/cronScheduler.js';
+import { runGeneration } from './runGeneration.js';
 
 const program = new Command();
 program
@@ -23,8 +24,8 @@ program
   )
   .action(async (opts) => {
     try {
-      const result = await runPipeline({
-        ...(opts.source ? { sourceId: opts.source as string } : {}),
+      const result = await runGeneration({
+        ...(opts.source ? { sourceId: opts.source as string } : { sourceId: 'all' }),
         ...(opts.runId ? { runId: opts.runId as string } : {}),
         ...(opts.hint ? { hint: opts.hint as string } : {}),
         trigger: 'manual',
@@ -83,38 +84,62 @@ program
 
 program
   .command('run-scheduled')
-  .description('Run all schedule rules whose previous cron tick falls in the current UTC hour')
+  .description('Run schedule rules whose previous cron tick is within the grace window')
   .option('--run-id <id>', 'External run id prefix (e.g. GitHub Actions run id)')
   .option('--force', 'Run every enabled rule, ignoring the time window', false)
   .action(async (opts) => {
     const schedules = await loadSchedules();
-    const { active, skipped } = decideRulesToRun(schedules.rules, {
-      force: Boolean(opts.force),
-    });
+    const force = Boolean(opts.force);
+    const { active, skipped } = decideRulesToRun(schedules.rules, { force });
+
+    const alreadyFired = active.filter(
+      (d) => !force && d.rule.lastFiredPrevTick === d.prevTick.toISOString(),
+    );
+    const toRun = active.filter(
+      (d) => force || d.rule.lastFiredPrevTick !== d.prevTick.toISOString(),
+    );
 
     logger.info(
       {
         total: schedules.rules.length,
-        active: active.length,
+        active: toRun.length,
         skipped: skipped.length,
-        force: Boolean(opts.force),
+        alreadyFired: alreadyFired.length,
+        force,
       },
       'Scheduler decision',
     );
     for (const s of skipped) {
-      logger.debug(
-        { ruleId: s.rule.id, ruleName: s.rule.name, reason: s.skipReason, error: s.error },
+      logger.info(
+        {
+          ruleId: s.rule.id,
+          ruleName: s.rule.name,
+          reason: s.skipReason,
+          prevTick: s.prevTick.toISOString(),
+          error: s.error,
+        },
         'Schedule rule skipped',
       );
     }
+    for (const s of alreadyFired) {
+      logger.info(
+        {
+          ruleId: s.rule.id,
+          ruleName: s.rule.name,
+          prevTick: s.prevTick.toISOString(),
+        },
+        'Schedule rule already fired for this tick',
+      );
+    }
 
-    if (active.length === 0) {
+    if (toRun.length === 0) {
       process.stdout.write(
         JSON.stringify({
           ok: true,
           status: 'no-rules-due',
           total: schedules.rules.length,
           skipped: skipped.length,
+          alreadyFired: alreadyFired.length,
         }) + '\n',
       );
       return;
@@ -124,26 +149,26 @@ program
     const summary: Array<Record<string, unknown>> = [];
     let hadFailure = false;
 
-    for (const decision of active) {
+    for (const decision of toRun) {
       const rule = decision.rule;
       const runId = runIdPrefix
         ? `${runIdPrefix}-${rule.id.slice(0, 8)}`
         : `sched-${Date.now()}-${rule.id.slice(0, 8)}`;
-      const sourceId = rule.source === 'all' ? undefined : rule.source;
 
       logger.info(
-        { ruleId: rule.id, ruleName: rule.name, source: rule.source, runId },
+        { ruleId: rule.id, ruleName: rule.name, source: rule.source, runId, prevTick: decision.prevTick.toISOString() },
         'Running scheduled rule',
       );
 
       try {
-        const result = await runPipeline({
-          ...(sourceId ? { sourceId } : {}),
+        const result = await runGeneration({
+          sourceId: rule.source || 'all',
           ...(rule.hint ? { hint: rule.hint } : {}),
           runId,
           trigger: 'scheduled',
         });
         if (isRejected(result)) {
+          await clearScheduleRuleFiredIfMatches(rule.id, decision.prevTick);
           summary.push({
             ruleId: rule.id,
             name: rule.name,
@@ -157,6 +182,7 @@ program
             'Scheduled run rejected (saved as skipped)',
           );
         } else {
+          await markScheduleRuleFired(rule.id, decision.prevTick);
           summary.push({
             ruleId: rule.id,
             name: rule.name,
@@ -171,6 +197,7 @@ program
           );
         }
       } catch (err) {
+        await clearScheduleRuleFiredIfMatches(rule.id, decision.prevTick);
         hadFailure = true;
         summary.push({
           ruleId: rule.id,
@@ -188,8 +215,9 @@ program
         ok: !hadFailure,
         status: hadFailure ? 'partial' : 'ok',
         total: schedules.rules.length,
-        active: active.length,
+        active: toRun.length,
         skipped: skipped.length,
+        alreadyFired: alreadyFired.length,
         runs: summary,
       }) + '\n',
     );

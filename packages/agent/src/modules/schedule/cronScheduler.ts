@@ -1,6 +1,9 @@
 import { CronExpressionParser } from 'cron-parser';
 import type { ScheduleRule } from '../../config/agentConfig.js';
 
+/** How long after a cron tick a rule stays eligible (covers GitHub Actions queue delay). */
+export const SCHEDULER_GRACE_MS = 90 * 60 * 1000;
+
 export interface DecideOptions {
   /**
    * When true, time-window filtering is bypassed and every enabled rule
@@ -24,15 +27,14 @@ export interface SchedulerDecision {
 }
 
 /**
- * Start of the current hour in UTC. The scheduler treats a rule as "due"
- * if its previous cron tick (any tz) is >= this moment. That guarantees
- * at most one run per cron tick even when the GitHub Actions hourly trigger
- * fires multiple times within a wide jitter window.
+ * A rule is due when its previous cron tick (in rule.tz) was recent enough.
+ * GitHub's hourly workflow often starts several minutes (sometimes >1h) late;
+ * a fixed UTC-hour window caused missed runs (e.g. 18:00 MSK = 15:00 UTC tick
+ * skipped when the job started at 16:05 UTC).
  */
-function hourStartUtc(now: Date): Date {
-  const d = new Date(now.getTime());
-  d.setUTCMinutes(0, 0, 0);
-  return d;
+function isTickDue(prev: Date, now: Date): boolean {
+  const elapsed = now.getTime() - prev.getTime();
+  return elapsed >= 0 && elapsed < SCHEDULER_GRACE_MS;
 }
 
 /**
@@ -41,7 +43,7 @@ function hourStartUtc(now: Date): Date {
  *  - disabled rules are skipped
  *  - rules with an invalid cron expression are skipped with reason
  *  - in normal mode: a rule fires if its previous cron tick (in its own tz)
- *    falls inside the current UTC hour window
+ *    was less than {@link SCHEDULER_GRACE_MS} ago
  *  - in `force` mode: every enabled rule fires regardless of timing
  *
  * Returns BOTH active and skipped decisions so callers can log skipping reasons.
@@ -51,7 +53,6 @@ export function decideRulesToRun(
   opts: DecideOptions = {},
 ): { active: SchedulerDecision[]; skipped: SchedulerDecision[] } {
   const now = opts.now ?? new Date();
-  const cutoff = hourStartUtc(now);
   const active: SchedulerDecision[] = [];
   const skipped: SchedulerDecision[] = [];
 
@@ -78,7 +79,7 @@ export function decideRulesToRun(
       continue;
     }
 
-    if (opts.force || prev.getTime() >= cutoff.getTime()) {
+    if (opts.force || isTickDue(prev, now)) {
       active.push({ rule, prevTick: prev });
     } else {
       skipped.push({ rule, prevTick: prev, skipReason: 'no-tick-in-window' });

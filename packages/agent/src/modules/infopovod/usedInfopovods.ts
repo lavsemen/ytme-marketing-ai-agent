@@ -6,9 +6,12 @@ import type { PipelineResult } from '../../types/result.js';
 import { infopovodKeyForInsight, normalizeInfopovodTitle } from './infopovodKey.js';
 
 const USED_KEYS_LIMIT = 500;
+/** Scan more docs than needed — recent runs may include rejected entries. */
+const SCAN_LIMIT = 1500;
 
 interface ResultDocLike {
   infopovodKey?: string;
+  status?: string;
   body?: PipelineResult;
 }
 
@@ -19,21 +22,35 @@ function keyFromResultDoc(data: ResultDocLike): string | null {
   return null;
 }
 
+function keysFromDocs(docs: Array<{ data: () => ResultDocLike }>): Set<string> {
+  const keys = new Set<string>();
+  let successScanned = 0;
+  for (const doc of docs) {
+    const data = doc.data() as ResultDocLike;
+    if (data.status !== 'success') continue;
+    const key = keyFromResultDoc(data);
+    if (key) keys.add(key);
+    successScanned += 1;
+    if (successScanned >= USED_KEYS_LIMIT) break;
+  }
+  return keys;
+}
+
 export async function loadUsedInfopovodKeys(): Promise<Set<string>> {
-  const snap = await getDb()
+  const db = getDb();
+
+  // Single-field orderBy — no composite index required (works before index deploy).
+  const snap = await db
     .collection('results')
-    .where('status', '==', 'success')
     .orderBy('createdAt', 'desc')
-    .limit(USED_KEYS_LIMIT)
+    .limit(SCAN_LIMIT)
     .get();
 
-  const keys = new Set<string>();
-  for (const doc of snap.docs) {
-    const key = keyFromResultDoc(doc.data() as ResultDocLike);
-    if (key) keys.add(key);
-  }
-
-  logger.info({ count: keys.size, scanned: snap.size }, 'Loaded used infopovod keys');
+  const keys = keysFromDocs(snap.docs);
+  logger.info(
+    { count: keys.size, scanned: snap.size, successCap: USED_KEYS_LIMIT },
+    'Loaded used infopovod keys',
+  );
   return keys;
 }
 

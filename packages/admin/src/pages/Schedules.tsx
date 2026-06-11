@@ -92,7 +92,6 @@ export function SchedulesPage(): ReactNode {
             ? normalizeScheduleRule({
                 ...r,
                 ...draft,
-                hint: draft.hint?.trim() || undefined,
                 updatedAt: now,
               })
             : r,
@@ -101,7 +100,6 @@ export function SchedulesPage(): ReactNode {
         const newRule: ScheduleRuleDto = normalizeScheduleRule({
           id: newScheduleId(),
           ...draft,
-          hint: draft.hint?.trim() || undefined,
           createdAt: now,
           updatedAt: now,
         });
@@ -158,7 +156,11 @@ export function SchedulesPage(): ReactNode {
       }
       return rules.map((x) =>
         x.id === r.id
-          ? { ...x, enabled: !existing.enabled, updatedAt: new Date().toISOString() }
+          ? normalizeScheduleRule({
+              ...x,
+              enabled: !existing.enabled,
+              updatedAt: new Date().toISOString(),
+            })
           : x,
       );
     });
@@ -179,8 +181,10 @@ export function SchedulesPage(): ReactNode {
             <span className="text-lime">Расписания</span> запусков
           </h2>
           <p className="mt-1 text-sm text-ink-muted">
-            Активные правила автоматически запускаются раз в час workflow{' '}
-            <code className="font-mono text-ink-secondary">scheduled.yml</code>. Лимит активных правил:{' '}
+            Активные правила запускаются workflow{' '}
+            <code className="font-mono text-ink-secondary">scheduled.yml</code> каждые 15 минут.
+            Время в правиле — в выбранной TZ (по умолчанию MSK). Допуск на задержку GitHub Actions: до 90 минут.
+            Лимит активных правил:{' '}
             <span className={enabledCount >= SCHEDULES_MAX_ENABLED ? 'font-bold text-warning' : 'text-ink-primary'}>
               {enabledCount} / {SCHEDULES_MAX_ENABLED}
             </span>
@@ -223,9 +227,10 @@ export function SchedulesPage(): ReactNode {
       <div className="ds-notice ds-notice-info">
         <Clock size={16} className="mt-0.5 shrink-0" />
         <div className="text-sm">
-          GitHub запускает workflow по cron с задержкой до ~15 минут — это нормально. Каждый cron-тик
-          сработает <strong className="text-ink-primary">ровно один раз</strong> в текущий час.
-          Минимальный практический шаг: раз в час.
+          GitHub запускает workflow с задержкой до ~15 минут — это нормально. После успешной
+          генерации тот же cron-тик не повторится (дедуп). Pipeline идентичен ручному запуску:
+          пост, лендинг и уведомление в Slack. При пропуске (reject) слот можно повторить в
+          окне 90 минут.
         </div>
       </div>
 

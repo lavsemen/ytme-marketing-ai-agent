@@ -207,6 +207,8 @@ export const ScheduleRuleSchema = z.object({
   tz: z.string().min(1).max(80).default('Europe/Moscow'),
   source: z.string().min(1).max(80),
   hint: z.string().max(800).optional(),
+  /** ISO timestamp of the cron tick last executed for this rule (dedup). */
+  lastFiredPrevTick: z.string().datetime().optional(),
   createdAt: z.string().datetime().optional(),
   updatedAt: z.string().datetime().optional(),
 });
@@ -238,6 +240,37 @@ export async function saveSchedules(s: SchedulesConfig): Promise<void> {
     .set({ rules, updatedAt: new Date().toISOString() }, { merge: true });
 }
 
+/** Marks a cron tick as executed after a successful pipeline run (dedup). */
+export async function markScheduleRuleFired(ruleId: string, prevTick: Date): Promise<void> {
+  const snap = await getDb().collection('config').doc('schedules').get();
+  const current = mergeSchedules(snap.exists ? snap.data() : null);
+  const iso = prevTick.toISOString();
+  const rules = current.rules.map((r) =>
+    r.id === ruleId
+      ? { ...r, lastFiredPrevTick: iso, updatedAt: new Date().toISOString() }
+      : r,
+  );
+  await saveSchedules({ rules });
+}
+
+/** Clears a premature fired marker so the same cron tick can retry (reject/error). */
+export async function clearScheduleRuleFiredIfMatches(
+  ruleId: string,
+  prevTick: Date,
+): Promise<void> {
+  const iso = prevTick.toISOString();
+  const snap = await getDb().collection('config').doc('schedules').get();
+  const current = mergeSchedules(snap.exists ? snap.data() : null);
+  const target = current.rules.find((r) => r.id === ruleId);
+  if (!target || target.lastFiredPrevTick !== iso) return;
+  const rules = current.rules.map((r) => {
+    if (r.id !== ruleId) return r;
+    const { lastFiredPrevTick: _drop, ...rest } = r;
+    return { ...rest, updatedAt: new Date().toISOString() };
+  });
+  await saveSchedules({ rules });
+}
+
 function normalizeScheduleRuleForWrite(r: ScheduleRule): ScheduleRule {
   const base: ScheduleRule = {
     id: r.id,
@@ -249,6 +282,7 @@ function normalizeScheduleRuleForWrite(r: ScheduleRule): ScheduleRule {
   };
   const hint = r.hint?.trim();
   if (hint) base.hint = hint;
+  if (r.lastFiredPrevTick) base.lastFiredPrevTick = r.lastFiredPrevTick;
   if (r.createdAt) base.createdAt = r.createdAt;
   if (r.updatedAt) base.updatedAt = r.updatedAt;
   return base;
